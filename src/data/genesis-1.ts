@@ -1,3 +1,10 @@
+export const genesis1Theme = {
+  setting: "Creation of the cosmos",
+  palette: "deep cosmic blues, radiant golds, ethereal whites",
+  elements: "primordial void, divine light rays, swirling waters, emerging forms",
+  style: "classical religious art, Baroque lighting, majestic and reverent",
+};
+
 export const genesis1Verses = [
   { number: 1, text: "In the beginning God created the heaven and the earth." },
   { number: 2, text: "And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters." },

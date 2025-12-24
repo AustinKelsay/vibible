@@ -3,7 +3,7 @@ import { Chat } from "@/components/chat";
 import { HeroImage } from "@/components/hero-image";
 import { ScriptureDetails } from "@/components/scripture-details";
 import { ScriptureReader } from "@/components/scripture-reader";
-import { genesis1Verses } from "@/data/genesis-1";
+import { genesis1Verses, genesis1Theme } from "@/data/genesis-1";
 
 interface VersePageProps {
   params: Promise<{ number: string }>;
@@ -72,7 +72,7 @@ export default async function VersePage({ params }: VersePageProps) {
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
         {/* Hero Image */}
-        <HeroImage verseText={verse.text} caption={verse.text} />
+        <HeroImage verseText={verse.text} caption={verse.text} chapterTheme={genesis1Theme} />
 
         {/* Scripture Reader */}
         <div className="flex-1 py-8">

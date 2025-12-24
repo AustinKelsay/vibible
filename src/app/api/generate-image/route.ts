@@ -21,14 +21,34 @@ export async function GET(request: Request) {
     );
   }
 
-  // Get verse text from query param
+  // Get verse text and theme from query params
   const { searchParams } = new URL(request.url);
   const verseText = searchParams.get("text") || DEFAULT_TEXT;
+  const themeParam = searchParams.get("theme");
+
+  // Build prompt with optional theme context
+  let prompt: string;
+  if (themeParam) {
+    try {
+      const theme = JSON.parse(themeParam);
+      prompt = `Biblical illustration: ${verseText}
+
+Setting: ${theme.setting}
+Visual elements: ${theme.elements}
+Color palette: ${theme.palette}
+Style: ${theme.style}`;
+    } catch {
+      // Fallback if theme parsing fails
+      prompt = `Biblical illustration: ${verseText}. Style: classical religious art, ethereal lighting, majestic`;
+    }
+  } else {
+    prompt = `Biblical illustration: ${verseText}. Style: classical religious art, ethereal lighting, majestic`;
+  }
 
   try {
     const response = await openai.images.generate({
       model: "dall-e-2",
-      prompt: `Biblical illustration: ${verseText}. Style: classical religious art, ethereal lighting, majestic`,
+      prompt,
       n: 1,
       size: "1024x1024",
     });

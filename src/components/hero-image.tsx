@@ -2,16 +2,25 @@
 
 import { useEffect, useState } from "react";
 
+interface ChapterTheme {
+  setting: string;
+  palette: string;
+  elements: string;
+  style: string;
+}
+
 interface HeroImageProps {
   alt?: string;
   caption?: string;
   verseText?: string;
+  chapterTheme?: ChapterTheme;
 }
 
 export function HeroImage({
   alt = "Scripture illustration",
   caption = "In the beginning",
   verseText,
+  chapterTheme,
 }: HeroImageProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,9 +33,10 @@ export function HeroImage({
       try {
         setIsLoading(true);
         setError(null);
-        const url = verseText
-          ? `/api/generate-image?text=${encodeURIComponent(verseText)}`
-          : "/api/generate-image";
+        const params = new URLSearchParams();
+        if (verseText) params.set("text", verseText);
+        if (chapterTheme) params.set("theme", JSON.stringify(chapterTheme));
+        const url = `/api/generate-image${params.toString() ? `?${params.toString()}` : ""}`;
         const response = await fetch(url, {
           signal: abortController.signal,
         });
@@ -67,7 +77,7 @@ export function HeroImage({
     return () => {
       abortController.abort();
     };
-  }, [verseText]);
+  }, [verseText, chapterTheme]);
 
   return (
     <figure className="relative w-full">

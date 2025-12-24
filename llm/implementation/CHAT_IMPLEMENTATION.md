@@ -19,21 +19,35 @@ Vibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 ### UI Entry Points
 
 - `src/components/chat.tsx` (chat window, input, and send behavior)
-- `src/app/page.tsx` (page context wiring)
+- `src/app/verse/[number]/page.tsx` (page context wiring)
 
 ### Message Send
 
 - `sendMessage` is called with the user text.
 - An extra JSON body is attached to each request: `{ context }`.
-- This context is the only way the server knows which passage is on screen.
+- This context is the only way the server knows which verse is on screen.
 
 ### Context Source
 
-- `src/data/genesis-1.ts` provides the visible verse text.
-- `src/app/page.tsx` computes `verseRange` and passes:
-  - `book`, `chapter`, `verseRange`
-  - `heroCaption`
-  - `verses` (array of verse number + text)
+- `src/data/genesis-1.ts` provides the verse data.
+- `src/app/verse/[number]/page.tsx` looks up the current verse and passes:
+  - `book`, `chapter`, `verseRange` (single verse number as string)
+  - `heroCaption` (the verse text)
+  - `verses` (single-item array with the current verse)
+
+Example context assembly:
+
+```tsx
+<Chat
+  context={{
+    book: "Genesis",
+    chapter: 1,
+    verseRange: String(verseNumber),  // e.g., "3"
+    heroCaption: verse.text,
+    verses: [verse],  // Single verse array
+  }}
+/>
+```
 
 ---
 
@@ -58,7 +72,7 @@ Vibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 The server builds a short system prompt:
 
 1. **Base prompt**: a minimal description of Vibible.
-2. **Context line**: flattened metadata for the current page.
+2. **Context line**: flattened metadata for the current verse.
 
 Context compaction rules:
 
@@ -89,7 +103,9 @@ OpenRouter is configured with a custom base URL and optional headers.
 
 ## Files to Know
 
-- `src/app/api/chat/route.ts` (validation, prompt, model selection, streaming)
-- `src/components/chat.tsx` (request body wiring)
-- `src/app/page.tsx` (context assembly)
-- `src/data/genesis-1.ts` (current passage data)
+| File | Purpose |
+|------|---------|
+| `src/app/api/chat/route.ts` | Validation, prompt, model selection, streaming |
+| `src/components/chat.tsx` | Request body wiring |
+| `src/app/verse/[number]/page.tsx` | Context assembly for single verse |
+| `src/data/genesis-1.ts` | Current passage data |
