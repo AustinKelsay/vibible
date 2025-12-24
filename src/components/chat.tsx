@@ -3,10 +3,24 @@
 import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
 
-export function Chat() {
+type PageContext = {
+  book?: string;
+  chapter?: number;
+  verseRange?: string;
+  heroCaption?: string;
+  imageTitle?: string;
+  verses?: Array<{ number?: number; text?: string }>;
+};
+
+type ChatProps = {
+  context?: PageContext;
+};
+
+export function Chat({ context }: ChatProps) {
   const { messages, sendMessage, status, error } = useChat();
   const [input, setInput] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
+  const requestBody = context ? { context } : undefined;
 
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
@@ -14,7 +28,10 @@ export function Chat() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
-    sendMessage({ text: input });
+    sendMessage(
+      { text: input },
+      requestBody ? { body: requestBody } : undefined
+    );
     setInput("");
     setIsExpanded(true);
   };

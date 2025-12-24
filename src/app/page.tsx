@@ -2,8 +2,12 @@ import { Chat } from "@/components/chat";
 import { HeroImage } from "@/components/hero-image";
 import { ScriptureDetails } from "@/components/scripture-details";
 import { ScriptureReader } from "@/components/scripture-reader";
+import { genesis1Verses } from "@/data/genesis-1";
 
 export default function Home() {
+  const verses = genesis1Verses;
+  const verseRange = `${verses[0]?.number ?? 1}-${verses[verses.length - 1]?.number ?? 1}`;
+
   return (
     <div className="flex min-h-screen flex-col bg-[var(--background)]">
       {/* Header */}
@@ -59,7 +63,7 @@ export default function Home() {
 
         {/* Scripture Reader */}
         <div className="flex-1 py-8">
-          <ScriptureReader book="Genesis" chapter={1} />
+          <ScriptureReader book="Genesis" chapter={1} verses={verses} />
         </div>
 
         {/* Scripture Details */}
@@ -67,7 +71,7 @@ export default function Home() {
           <ScriptureDetails
             book="Genesis"
             chapter={1}
-            verseRange="1-10"
+            verseRange={verseRange}
             imageAttribution={{
               title: "The Creation",
               artist: "AI Generated",
@@ -79,7 +83,15 @@ export default function Home() {
 
       {/* Chat - Fixed at Bottom */}
       <div className="sticky bottom-0 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
-        <Chat />
+        <Chat
+          context={{
+            book: "Genesis",
+            chapter: 1,
+            verseRange,
+            heroCaption: "In the beginning",
+            verses,
+          }}
+        />
       </div>
     </div>
   );
