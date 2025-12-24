@@ -54,10 +54,23 @@ export function HeroImage({
   useEffect(() => {
     const abortController = new AbortController();
 
-    // Detect if page was reloaded (hard or soft refresh)
-    // Hard refresh doesn't automatically bypass fetch cache, so we handle it explicitly
-    const isPageReload = typeof window !== 'undefined' &&
-      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)?.type === 'reload';
+    // Detect if we should bypass cache (only on page reload, not client-side navigation)
+    // The navigation entry persists during client-side nav, so we use startTime as a unique ID
+    // to ensure we only bypass cache ONCE per page reload, not on every verse change
+    let shouldBypassCache = false;
+    if (typeof window !== 'undefined') {
+      const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+      const isReload = navEntry?.type === 'reload';
+      const pageLoadId = String(navEntry?.startTime ?? '');
+      const handledPageLoad = sessionStorage.getItem('image-cache-bypassed-for');
+
+      // Only bypass cache once per page reload session
+      shouldBypassCache = isReload && handledPageLoad !== pageLoadId;
+
+      if (shouldBypassCache) {
+        sessionStorage.setItem('image-cache-bypassed-for', pageLoadId);
+      }
+    }
 
     async function generateImage() {
       try {
@@ -70,8 +83,8 @@ export function HeroImage({
         const url = `/api/generate-image${params.toString() ? `?${params.toString()}` : ""}`;
         const response = await fetch(url, {
           signal: abortController.signal,
-          // Bypass cache on page reload (hard refresh), use default caching otherwise
-          cache: isPageReload ? 'reload' : 'default',
+          // Bypass cache only on first fetch after page reload, use cache for navigation
+          cache: shouldBypassCache ? 'reload' : 'default',
         });
 
         if (response.status === 403) {

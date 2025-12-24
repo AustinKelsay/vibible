@@ -332,19 +332,32 @@ Each unique URL (including theme) caches separately:
 
 | Action | Browser Behavior | Result |
 |--------|------------------|--------|
-| Normal navigation | Uses cached response | Same image (fast) |
-| Any refresh (Cmd+R or Cmd+Shift+R) | Bypasses fetch cache | New image generated |
-| Navigate to new verse | Different URL | New image (or cached if visited before) |
+| Normal navigation between verses | Uses cached response | Same image (fast) |
+| Page refresh (Cmd+R or Cmd+Shift+R) | Bypasses fetch cache once | New image for current verse |
+| Navigate after refresh | Uses cached response | Cached images for other verses |
 
-**Implementation Note:** JavaScript `fetch()` doesn't automatically respect hard refresh behavior. We detect page reload via the Performance API and explicitly set `cache: 'reload'` to bypass the browser's fetch cache:
+**Implementation Note:** JavaScript `fetch()` doesn't automatically respect hard refresh. We detect page reload via the Performance API, but must be careful: the navigation entry persists during client-side navigation. We use `sessionStorage` to ensure we only bypass cache **once** per reload:
 
 ```tsx
-const isPageReload = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)?.type === 'reload';
+const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+const isReload = navEntry?.type === 'reload';
+const pageLoadId = String(navEntry?.startTime ?? '');
+const handledPageLoad = sessionStorage.getItem('image-cache-bypassed-for');
 
-fetch(url, {
-  cache: isPageReload ? 'reload' : 'default',
-});
+// Only bypass cache once per page reload session
+const shouldBypassCache = isReload && handledPageLoad !== pageLoadId;
+
+if (shouldBypassCache) {
+  sessionStorage.setItem('image-cache-bypassed-for', pageLoadId);
+}
+
+fetch(url, { cache: shouldBypassCache ? 'reload' : 'default' });
 ```
+
+This ensures:
+- Refresh generates a new image for the current verse
+- Navigating to other verses still uses cached images
+- Each new refresh properly bypasses cache again
 
 ---
 
