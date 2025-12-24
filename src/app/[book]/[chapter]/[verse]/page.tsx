@@ -80,7 +80,7 @@ export default async function VersePage({ params }: VersePageProps) {
             imageAttribution={{
               title: "Scripture Illustration",
               artist: "AI Generated",
-              source: "Vibible",
+              source: "Visibible",
             }}
           />
         </div>

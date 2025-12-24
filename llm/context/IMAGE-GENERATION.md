@@ -1,6 +1,6 @@
 # Image Generation Context
 
-High-level overview of how Vibible generates scripture illustrations. Details may change.
+High-level overview of how Visibible generates scripture illustrations. Details may change.
 
 ## Overview
 
@@ -82,7 +82,8 @@ Cache duration is 1 hour (`max-age=3600`).
 
 ## Entry Points
 
-- Theme data: `src/data/genesis-1.ts` (`genesis1Theme`)
 - API: `src/app/api/generate-image/route.ts`
 - UI: `src/components/hero-image.tsx`
-- Verse page: `src/app/verse/[number]/page.tsx`
+- Verse page: `src/app/[book]/[chapter]/[verse]/page.tsx`
+
+Note: Chapter themes are no longer hardcoded. The image generation uses verse text directly to create contextually appropriate illustrations.

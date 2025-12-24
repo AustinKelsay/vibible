@@ -1,6 +1,6 @@
 # Chat Context
 
-High-level overview of how Vibible chat works. Details may change.
+High-level overview of how Visibible chat works. Details may change.
 
 ## Overview
 
@@ -13,7 +13,7 @@ High-level overview of how Vibible chat works. Details may change.
 - Chat requests are stateless; the server only sees what is sent per request.
 - The client sends a compact page context with every message.
 - Context includes passage metadata (book, chapter, verse number) and the current verse.
-- The server builds a short system prompt: a basic Vibible description plus the compacted context.
+- The server builds a short system prompt: a basic Visibible description plus the compacted context.
 
 ## Single Verse Context
 
@@ -25,7 +25,7 @@ The app displays one verse at a time. Chat context reflects this:
 - `heroCaption`: The verse text
 - `verses`: Array with one verse object
 
-Example context for `/verse/3`:
+Example context for `/genesis/1/3`:
 ```json
 {
   "book": "Genesis",
@@ -40,4 +40,4 @@ Example context for `/verse/3`:
 
 - API: `src/app/api/chat/route.ts`
 - UI: `src/components/chat.tsx`
-- Context source: `src/app/verse/[number]/page.tsx`
+- Context source: `src/app/[book]/[chapter]/[verse]/page.tsx`

@@ -11,12 +11,12 @@ const openRouter = createOpenAI({
   baseURL: "https://openrouter.ai/api/v1",
   headers: {
     "HTTP-Referer": process.env.OPENROUTER_REFERRER ?? "http://localhost:3000",
-    "X-Title": process.env.OPENROUTER_TITLE ?? "vibible",
+    "X-Title": process.env.OPENROUTER_TITLE ?? "visibible",
   },
 });
 
 const baseSystemPrompt =
-  "You are Vibible, a prototype to vibe with the Bible. Keep replies short and grounded in the passage.";
+  "You are Visibible, a prototype to vibe with the Bible. Keep replies short and grounded in the passage.";
 
 const pageContextSchema = z
   .object({

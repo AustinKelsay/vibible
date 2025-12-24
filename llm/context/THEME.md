@@ -1,4 +1,4 @@
-# Vibible Design System
+# Visibible Design System
 
 A restrained, native-like design system optimized for web-first development with future mobile portability.
 

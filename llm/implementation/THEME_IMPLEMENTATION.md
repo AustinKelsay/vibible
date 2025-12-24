@@ -1,6 +1,6 @@
 # Theme Implementation Guide
 
-This document describes how the Vibible design system (defined in `/llm/context/THEME.md`) is implemented in code. Use this as a reference when building or modifying UI components.
+This document describes how the Visibible design system (defined in `/llm/context/THEME.md`) is implemented in code. Use this as a reference when building or modifying UI components.
 
 ---
 

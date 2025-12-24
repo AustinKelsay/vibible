@@ -6,7 +6,7 @@ This document describes the current chat implementation. It is intentionally hig
 
 ## Architecture Overview
 
-Vibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
+Visibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 
 - Client UI uses `useChat` to send messages to `src/app/api/chat/route.ts`.
 - The API validates input, builds a compact system prompt, and streams tokens back.
@@ -19,7 +19,7 @@ Vibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 ### UI Entry Points
 
 - `src/components/chat.tsx` (chat window, input, and send behavior)
-- `src/app/verse/[number]/page.tsx` (page context wiring)
+- `src/app/[book]/[chapter]/[verse]/page.tsx` (page context wiring)
 
 ### Message Send
 
@@ -29,8 +29,8 @@ Vibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 
 ### Context Source
 
-- `src/data/genesis-1.ts` provides the verse data.
-- `src/app/verse/[number]/page.tsx` looks up the current verse and passes:
+- `src/lib/bible-api.ts` fetches verse data from bible-api.com.
+- `src/app/[book]/[chapter]/[verse]/page.tsx` looks up the current verse and passes:
   - `book`, `chapter`, `verseRange` (single verse number as string)
   - `heroCaption` (the verse text)
   - `verses` (single-item array with the current verse)
@@ -40,11 +40,11 @@ Example context assembly:
 ```tsx
 <Chat
   context={{
-    book: "Genesis",
-    chapter: 1,
-    verseRange: String(verseNumber),  // e.g., "3"
-    heroCaption: verse.text,
-    verses: [verse],  // Single verse array
+    book: bookData.name,
+    chapter: location.chapter,
+    verseRange: String(location.verse),
+    heroCaption: verseData.text,
+    verses: [{ number: location.verse, text: verseData.text }],
   }}
 />
 ```
@@ -71,7 +71,7 @@ Example context assembly:
 
 The server builds a short system prompt:
 
-1. **Base prompt**: a minimal description of Vibible.
+1. **Base prompt**: a minimal description of Visibible.
 2. **Context line**: flattened metadata for the current verse.
 
 Context compaction rules:
@@ -107,5 +107,5 @@ OpenRouter is configured with a custom base URL and optional headers.
 |------|---------|
 | `src/app/api/chat/route.ts` | Validation, prompt, model selection, streaming |
 | `src/components/chat.tsx` | Request body wiring |
-| `src/app/verse/[number]/page.tsx` | Context assembly for single verse |
-| `src/data/genesis-1.ts` | Current passage data |
+| `src/app/[book]/[chapter]/[verse]/page.tsx` | Context assembly for single verse |
+| `src/lib/bible-api.ts` | Bible API client for fetching verse data |

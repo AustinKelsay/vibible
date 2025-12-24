@@ -6,7 +6,7 @@ This document describes the current image generation implementation. It is inten
 
 ## Architecture Overview
 
-Vibible generates AI illustrations for each scripture verse using OpenRouter with Google's Gemini model.
+Visibible generates AI illustrations for each scripture verse using OpenRouter with Google's Gemini model.
 
 - Each verse page passes its text and chapter theme to the `HeroImage` component.
 - Client fetches `/api/generate-image?text={verse}&theme={theme JSON}`.

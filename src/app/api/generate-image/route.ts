@@ -59,7 +59,7 @@ Generate a beautiful, reverent image that captures the essence of this scripture
         "Authorization": `Bearer ${openRouterApiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": process.env.OPENROUTER_REFERRER || "http://localhost:3000",
-        "X-Title": process.env.OPENROUTER_TITLE || "vibible",
+        "X-Title": process.env.OPENROUTER_TITLE || "visibible",
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash-image-preview",

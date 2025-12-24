@@ -1,4 +1,4 @@
-# vibible
+# visibible
 
 Prototype. Vibe with the bible.
 

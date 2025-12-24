@@ -9,7 +9,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 backdrop-blur-md bg-[var(--background)]/80 border-b border-[var(--divider)]">
       <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
-        <h1 className="text-lg font-semibold tracking-tight">Vibible</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Visibible</h1>
         <nav className="flex items-center gap-1">
           <button
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)]"
