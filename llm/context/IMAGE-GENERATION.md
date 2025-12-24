@@ -5,7 +5,7 @@ High-level overview of how Vibible generates scripture illustrations. Details ma
 ## Overview
 
 - Each verse has its own AI-generated image.
-- Images are generated server-side via OpenAI's DALL-E API.
+- Images are generated server-side via OpenRouter using Google's Gemini model.
 - Chapter-level themes provide visual consistency across verses within a chapter.
 - Browser-level caching ensures each verse's image persists across soft refreshes.
 
@@ -14,9 +14,9 @@ High-level overview of how Vibible generates scripture illustrations. Details ma
 1. Verse page renders `HeroImage` with verse text and chapter theme
 2. Client fetches `/api/generate-image?text={verse}&theme={theme JSON}`
 3. Server builds enhanced prompt using verse + theme context
-4. Server generates image using DALL-E
+4. Server generates image using OpenRouter (`google/gemini-2.5-flash-image-preview`)
 5. Response includes `Cache-Control` header for browser caching
-6. Generated image URL is displayed in the hero area
+6. Generated image URL (or base64 data URL) is displayed in the hero area
 
 ## Chapter Themes
 
@@ -70,14 +70,15 @@ Browser cache handles persistence per-verse:
 
 Server-side Next.js caching is disabled (`dynamic = 'force-dynamic'`) so the browser has full control.
 
-Cache duration is 1 hour (`max-age=3600`), which aligns with OpenAI's temporary URL expiration.
+Cache duration is 1 hour (`max-age=3600`).
 
-## Cost Considerations
+## Provider & Model
 
-- Model: DALL-E 2 (cheaper than DALL-E 3)
-- Size: 1024x1024
+- **Provider**: OpenRouter (OpenAI-compatible API)
+- **Model**: `google/gemini-2.5-flash-image-preview`
+- **Pricing**: ~$0.30/M input tokens, ~$2.50/M output tokens
+- **Response format**: URL or base64 (handled automatically)
 - Per-verse caching reduces redundant generation costs
-- Each unique verse generates one image (cached for 1 hour)
 
 ## Entry Points
 

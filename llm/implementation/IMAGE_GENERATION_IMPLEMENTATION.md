@@ -6,12 +6,12 @@ This document describes the current image generation implementation. It is inten
 
 ## Architecture Overview
 
-Vibible generates AI illustrations for each scripture verse using OpenAI's DALL-E API.
+Vibible generates AI illustrations for each scripture verse using OpenRouter with Google's Gemini model.
 
 - Each verse page passes its text and chapter theme to the `HeroImage` component.
 - Client fetches `/api/generate-image?text={verse}&theme={theme JSON}`.
 - Server builds an enhanced prompt combining verse text with theme context.
-- Server generates an image via DALL-E and returns the temporary URL.
+- Server generates an image via OpenRouter (Gemini) and returns the URL or base64 data.
 - Browser caching controls regeneration behavior per-verse.
 
 ---
@@ -116,7 +116,7 @@ While loading or on error, a gradient placeholder is shown:
 
 ### Image Display
 
-- Uses native `<img>` tag (not Next.js Image, for external URLs)
+- Uses native `<img>` tag (not Next.js Image, for external URLs and data URLs)
 - `object-cover` fills the container
 - Aspect ratio: 16:9 mobile, 21:9 desktop
 - Caption overlay at bottom with verse text
@@ -136,6 +136,21 @@ export const dynamic = 'force-dynamic';
 ```
 
 This disables Next.js server-side caching so the browser cache has full control.
+
+### OpenRouter Client Setup
+
+```ts
+const openrouter = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": process.env.OPENROUTER_REFERRER || "http://localhost:3000",
+    "X-Title": process.env.OPENROUTER_TITLE || "vibible",
+  },
+});
+```
+
+Uses the OpenAI SDK with OpenRouter's base URL for compatibility.
 
 ### Query Parameter Handling
 
@@ -174,44 +189,48 @@ Style: ${theme.style}`;
 prompt = `Biblical illustration: ${verseText}. Style: classical religious art, ethereal lighting, majestic`;
 ```
 
-### OpenAI Client Setup
-
-```ts
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-```
-
-Requires `OPENAI_API_KEY` in environment.
-
 ### Image Generation Call
 
 ```ts
-const response = await openai.images.generate({
-  model: "dall-e-2",
-  prompt,  // Enhanced prompt with theme context
-  n: 1,
-  size: "1024x1024",
+const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-2.5-flash-image-preview",
+    messages: [{ role: "user", content: prompt }],
+    modalities: ["image", "text"],
+  }),
 });
 ```
 
-- **Model**: DALL-E 2
-- **Size**: 1024x1024
+- **Provider**: OpenRouter (chat completions endpoint with image modality)
+- **Model**: `google/gemini-2.5-flash-image-preview`
+- **Pricing**: ~$0.30/M input tokens, ~$2.50/M output tokens
 - **Prompt**: Verse text + theme context
 
 ### Response Handling
 
-Success returns JSON with cache header:
+The API handles both URL and base64 responses:
 
 ```ts
-return NextResponse.json({ imageUrl }, {
-  headers: {
-    'Cache-Control': 'private, max-age=3600',
-  },
-});
-```
+const imageUrl = response.data?.[0]?.url;
+const imageB64 = response.data?.[0]?.b64_json;
 
-Errors return 500 with error message.
+if (imageUrl) {
+  return NextResponse.json({ imageUrl }, {
+    headers: { 'Cache-Control': 'private, max-age=3600' },
+  });
+} else if (imageB64) {
+  return NextResponse.json({
+    imageUrl: `data:image/png;base64,${imageB64}`
+  }, {
+    headers: { 'Cache-Control': 'private, max-age=3600' },
+  });
+}
+```
 
 ---
 
@@ -238,10 +257,6 @@ Each unique URL (including theme) caches separately:
 | Soft refresh (Cmd+R) | Uses cached response | Same image |
 | Hard refresh (Cmd+Shift+R) | Bypasses cache | New image generated |
 | Navigate to new verse | Different URL | New image (or cached if visited before) |
-
-### Why 1 Hour?
-
-OpenAI's temporary image URLs expire after approximately 1 hour. The cache duration matches this to avoid serving expired URLs.
 
 ---
 
@@ -278,9 +293,9 @@ HeroImage fetches /api/generate-image?text={verse}&theme={theme JSON}
     ↓
 API builds enhanced prompt: verse + setting + elements + palette + style
     ↓
-DALL-E generates image with full context
+OpenRouter (Gemini) generates image
     ↓
-Image URL returned and displayed
+Image URL or base64 returned and displayed
 ```
 
 ---
@@ -289,9 +304,9 @@ Image URL returned and displayed
 
 ### Server Errors
 
-- OpenAI API failures caught and logged
+- OpenRouter API failures caught and logged
 - Returns `{ error: "Failed to generate image" }` with 500 status
-- Missing image URL returns `{ error: "No image generated" }`
+- Missing image data returns `{ error: "No image generated" }`
 - Invalid theme JSON falls back to simple prompt
 
 ### Client Errors
@@ -306,11 +321,11 @@ Image URL returned and displayed
 ## Environment Requirements
 
 ```bash
-OPENAI_API_KEY=sk-...
-ENABLE_IMAGE_GENERATION=true  # Optional flag to enable/disable
+OPENROUTER_API_KEY=sk-or-...        # Required
+OPENROUTER_REFERRER=http://localhost:3000
+OPENROUTER_TITLE=vibible
+ENABLE_IMAGE_GENERATION=true        # Set to enable
 ```
-
-Must have billing enabled on OpenAI account.
 
 ---
 
@@ -319,10 +334,10 @@ Must have billing enabled on OpenAI account.
 | File | Purpose |
 |------|---------|
 | `src/data/genesis-1.ts` | Verse data + `genesis1Theme` export |
-| `src/app/api/generate-image/route.ts` | API endpoint, theme parsing, prompt building |
+| `src/app/api/generate-image/route.ts` | API endpoint, OpenRouter client, prompt building |
 | `src/components/hero-image.tsx` | Client component, `chapterTheme` prop, fetch logic |
 | `src/app/verse/[number]/page.tsx` | Verse page, imports and passes theme |
-| `.env.local` | OpenAI API key configuration |
+| `.env.local` | OpenRouter API key configuration |
 
 ---
 
