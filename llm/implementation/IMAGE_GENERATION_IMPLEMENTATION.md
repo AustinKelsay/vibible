@@ -65,18 +65,21 @@ Themes ensure visual consistency across all verses in a chapter:
 interface HeroImageProps {
   alt?: string;
   caption?: string;
-  verseText?: string;      // The verse text to generate an image for
+  verseText?: string;           // The verse text to generate an image for
   chapterTheme?: ChapterTheme;  // Theme for visual consistency
+  verseNumber?: number;         // Current verse (for navigation arrows)
+  totalVerses?: number;         // Total verses (for navigation arrows)
 }
 ```
 
 ### Component State
 
-Three state variables manage the UI:
+Four state variables manage the UI:
 
 ```tsx
 const [imageUrl, setImageUrl] = useState<string | null>(null);
 const [isLoading, setIsLoading] = useState(true);
+const [showSkeleton, setShowSkeleton] = useState(false);  // Delayed loading indicator
 const [error, setError] = useState<string | null>(null);
 ```
 
@@ -105,14 +108,61 @@ useEffect(() => {
 }, [verseText, chapterTheme]);
 ```
 
+### Delayed Loading Pattern
+
+To prevent a flash of loading state for cached responses, we delay showing the skeleton:
+
+```tsx
+// Only show skeleton after a delay to prevent flash for cached responses
+useEffect(() => {
+  if (!isLoading) {
+    setShowSkeleton(false);
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    if (isLoading) {
+      setShowSkeleton(true);
+    }
+  }, 300);  // 300ms delay
+
+  return () => clearTimeout(timer);
+}, [isLoading]);
+```
+
+**Behavior:**
+- **Fast/cached response (<300ms):** Placeholder → Image (no skeleton shown)
+- **Slow response (>300ms):** Placeholder → Skeleton shimmer → Image
+
 ### Placeholder UI
 
 While loading or on error, a gradient placeholder is shown:
 
 - Warm gradient background (amber/orange/rose)
 - Decorative blur element simulating light
-- Loading text: "Generating image..."
+- Skeleton shimmer animation (only after 300ms delay)
 - Error text in red if generation fails
+
+### Floating Navigation Arrows
+
+When `verseNumber` and `totalVerses` are provided, floating arrow buttons appear on the image:
+
+```tsx
+{hasPrevious && (
+  <Link href={`/verse/${verseNumber - 1}`} className="absolute left-3 top-1/2 ...">
+    <ChevronLeft size={24} strokeWidth={2} />
+  </Link>
+)}
+{hasNext && (
+  <Link href={`/verse/${verseNumber + 1}`} className="absolute right-3 top-1/2 ...">
+    <ChevronRight size={24} strokeWidth={2} />
+  </Link>
+)}
+```
+
+- Positioned at left/right edges, vertically centered
+- Semi-transparent background with backdrop blur
+- Only show when navigation is available (not on first/last verse)
 
 ### Image Display
 
@@ -282,9 +332,19 @@ Each unique URL (including theme) caches separately:
 
 | Action | Browser Behavior | Result |
 |--------|------------------|--------|
-| Soft refresh (Cmd+R) | Uses cached response | Same image |
-| Hard refresh (Cmd+Shift+R) | Bypasses cache | New image generated |
+| Normal navigation | Uses cached response | Same image (fast) |
+| Any refresh (Cmd+R or Cmd+Shift+R) | Bypasses fetch cache | New image generated |
 | Navigate to new verse | Different URL | New image (or cached if visited before) |
+
+**Implementation Note:** JavaScript `fetch()` doesn't automatically respect hard refresh behavior. We detect page reload via the Performance API and explicitly set `cache: 'reload'` to bypass the browser's fetch cache:
+
+```tsx
+const isPageReload = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)?.type === 'reload';
+
+fetch(url, {
+  cache: isPageReload ? 'reload' : 'default',
+});
+```
 
 ---
 
@@ -292,17 +352,20 @@ Each unique URL (including theme) caches separately:
 
 ### Page Component
 
-`src/app/verse/[number]/page.tsx` passes both verse text and theme to HeroImage:
+`src/app/verse/[number]/page.tsx` passes verse text, theme, and navigation info to HeroImage:
 
 ```tsx
 import { genesis1Verses, genesis1Theme } from "@/data/genesis-1";
 
 const verse = genesis1Verses[verseNumber - 1];
+const totalVerses = genesis1Verses.length;
 
 <HeroImage
   verseText={verse.text}
   caption={verse.text}
   chapterTheme={genesis1Theme}
+  verseNumber={verseNumber}
+  totalVerses={totalVerses}
 />
 ```
 

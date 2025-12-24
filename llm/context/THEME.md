@@ -210,10 +210,40 @@ Prefer skeleton loaders over spinners:
 
 ## Icons
 
-- Style: Simple outline, 1.5-2px stroke
+We use **Lucide React** (`lucide-react`) for icons.
+
+- Style: Simple outline, 1.5-2px stroke (matches Lucide's default)
 - Size: 20px (inline), 24px (standalone)
-- Color: Inherit from text, accent for interactive
+- Color: Inherit from text via `currentColor`
 - Always pair with labels for primary actions
+
+### Usage
+
+```tsx
+import { ChevronLeft, Search, Send } from "lucide-react";
+
+// Inline icon (20px)
+<ChevronLeft size={20} strokeWidth={1.5} />
+
+// Standalone icon (24px)
+<Search size={24} strokeWidth={1.5} />
+
+// With custom stroke
+<Send size={20} strokeWidth={2} />
+```
+
+### Common Icons
+
+| Purpose | Icon |
+|---------|------|
+| Navigation back | `ChevronLeft` |
+| Navigation forward | `ChevronRight` |
+| Expand/collapse | `ChevronUp`, `ChevronDown` |
+| Search | `Search` |
+| Menu | `Menu` |
+| Send message | `Send` |
+| Info | `Info` |
+| Loading | `Loader2` (with `animate-spin`) |
 
 ---
 

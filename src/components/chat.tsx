@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
+import { ChevronUp, Loader2, Send } from "lucide-react";
 
 type PageContext = {
   book?: string;
@@ -99,21 +100,13 @@ export function Chat({ context }: ChatProps) {
           className="w-full flex items-center justify-center gap-2 py-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)] border-b border-[var(--divider)]"
           aria-label={isExpanded ? "Collapse chat" : "Expand chat"}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <ChevronUp
+            size={16}
+            strokeWidth={1.5}
             className={`transition-transform duration-[var(--motion-fast)] ${
               isExpanded ? "rotate-180" : ""
             }`}
-          >
-            <path d="M18 15l-6-6-6 6" />
-          </svg>
+          />
           <span className="text-xs uppercase tracking-wider">
             {isExpanded ? "Hide" : "Show"} conversation
           </span>
@@ -138,31 +131,9 @@ export function Chat({ context }: ChatProps) {
           className="min-h-[44px] min-w-[44px] px-5 bg-[var(--accent)] text-[var(--accent-text)] rounded-[var(--radius-full)] hover:bg-[var(--accent-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-[var(--motion-fast)] active:scale-[0.98]"
         >
           {isLoading ? (
-            <svg
-              className="w-5 h-5 animate-spin mx-auto"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-            </svg>
+            <Loader2 size={20} strokeWidth={2} className="animate-spin mx-auto" />
           ) : (
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="mx-auto"
-            >
-              <path d="M22 2L11 13" />
-              <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-            </svg>
+            <Send size={20} strokeWidth={2} className="mx-auto" />
           )}
         </button>
       </form>

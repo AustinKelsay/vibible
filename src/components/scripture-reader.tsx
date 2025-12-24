@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Verse {
   number: number;
@@ -52,18 +53,7 @@ export function ScriptureReader({
             className="flex items-center gap-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)] min-h-[44px] px-3 -ml-3"
             aria-label="Previous verse"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
+            <ChevronLeft size={20} strokeWidth={1.5} />
             <span className="text-sm">Previous</span>
           </Link>
         ) : (
@@ -81,18 +71,7 @@ export function ScriptureReader({
             aria-label="Next verse"
           >
             <span className="text-sm">Next</span>
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 18l6-6-6-6" />
-            </svg>
+            <ChevronRight size={20} strokeWidth={1.5} />
           </Link>
         ) : (
           <div className="min-h-[44px] px-3 -mr-3" />

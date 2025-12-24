@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ChapterTheme {
   setting: string;
@@ -14,6 +16,8 @@ interface HeroImageProps {
   caption?: string;
   verseText?: string;
   chapterTheme?: ChapterTheme;
+  verseNumber?: number;
+  totalVerses?: number;
 }
 
 export function HeroImage({
@@ -21,17 +25,44 @@ export function HeroImage({
   caption = "In the beginning",
   verseText,
   chapterTheme,
+  verseNumber,
+  totalVerses,
 }: HeroImageProps) {
+  const hasPrevious = verseNumber !== undefined && verseNumber > 1;
+  const hasNext = verseNumber !== undefined && totalVerses !== undefined && verseNumber < totalVerses;
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showSkeleton, setShowSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Only show skeleton after a delay to prevent flash for cached responses
+  useEffect(() => {
+    if (!isLoading) {
+      setShowSkeleton(false);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (isLoading) {
+        setShowSkeleton(true);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   useEffect(() => {
     const abortController = new AbortController();
 
+    // Detect if page was reloaded (hard or soft refresh)
+    // Hard refresh doesn't automatically bypass fetch cache, so we handle it explicitly
+    const isPageReload = typeof window !== 'undefined' &&
+      (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)?.type === 'reload';
+
     async function generateImage() {
       try {
         setIsLoading(true);
+        setShowSkeleton(false);
         setError(null);
         const params = new URLSearchParams();
         if (verseText) params.set("text", verseText);
@@ -39,6 +70,8 @@ export function HeroImage({
         const url = `/api/generate-image${params.toString() ? `?${params.toString()}` : ""}`;
         const response = await fetch(url, {
           signal: abortController.signal,
+          // Bypass cache on page reload (hard refresh), use default caching otherwise
+          cache: isPageReload ? 'reload' : 'default',
         });
 
         if (response.status === 403) {
@@ -91,7 +124,7 @@ export function HeroImage({
             className="w-full h-full object-cover"
           />
         ) : (
-          /* Placeholder gradient while loading */
+          /* Placeholder with skeleton loader */
           <div className="absolute inset-0 bg-gradient-to-br from-amber-100 via-orange-50 to-rose-100 dark:from-amber-950/30 dark:via-stone-900 dark:to-rose-950/20">
             {/* Decorative sun/light element */}
             <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 md:w-48 md:h-48 rounded-full bg-gradient-to-b from-amber-200/80 to-orange-300/60 dark:from-amber-400/20 dark:to-orange-500/10 blur-2xl" />
@@ -99,15 +132,17 @@ export function HeroImage({
             {/* Horizon line */}
             <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-stone-200/50 to-transparent dark:from-stone-800/30" />
 
-            {/* Loading/Error state */}
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="animate-pulse text-[var(--muted)] text-sm">Generating image...</div>
+            {/* Skeleton shimmer overlay - only shows after delay */}
+            {showSkeleton && (
+              <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent dark:via-white/5" />
               </div>
             )}
+
+            {/* Error state */}
             {error && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-red-500 text-sm">{error}</div>
+                <div className="text-red-500 text-sm px-4 text-center">{error}</div>
               </div>
             )}
           </div>
@@ -115,6 +150,26 @@ export function HeroImage({
 
         {/* Gradient overlay for text readability */}
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-transparent to-transparent opacity-60" />
+
+        {/* Floating Navigation Arrows */}
+        {hasPrevious && verseNumber && (
+          <Link
+            href={`/verse/${verseNumber - 1}`}
+            className="absolute left-3 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-[var(--background)]/70 backdrop-blur-sm text-[var(--foreground)] hover:bg-[var(--background)]/90 transition-all duration-[var(--motion-fast)] shadow-lg"
+            aria-label="Previous verse"
+          >
+            <ChevronLeft size={24} strokeWidth={2} />
+          </Link>
+        )}
+        {hasNext && verseNumber && (
+          <Link
+            href={`/verse/${verseNumber + 1}`}
+            className="absolute right-3 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-[var(--background)]/70 backdrop-blur-sm text-[var(--foreground)] hover:bg-[var(--background)]/90 transition-all duration-[var(--motion-fast)] shadow-lg"
+            aria-label="Next verse"
+          >
+            <ChevronRight size={24} strokeWidth={2} />
+          </Link>
+        )}
       </div>
 
       {/* Caption */}

@@ -209,36 +209,37 @@ className="w-full aspect-[16/9] md:aspect-[21/9]"
 
 ## Icon Conventions
 
-### Inline SVG Approach
+### Lucide React
 
-We use inline SVGs for icons, not an icon library. This keeps the bundle small and allows full styling control.
+We use **Lucide React** for all icons. It's lightweight, tree-shakeable, and matches our design system's stroke style.
 
 ```tsx
-<svg
-  width="20"
-  height="20"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  strokeWidth="1.5"
-  strokeLinecap="round"
-  strokeLinejoin="round"
->
-  <path d="..." />
-</svg>
+import { ChevronLeft, Search, Send, Loader2 } from "lucide-react";
 ```
 
-### Standard Properties
+### Standard Usage
 
-| Property | Value |
-|----------|-------|
-| Size | `20x20` (inline), `24x24` (standalone) |
-| viewBox | Always `0 0 24 24` |
-| fill | `none` |
-| stroke | `currentColor` |
-| strokeWidth | `1.5` (default), `2` (emphasis) |
-| strokeLinecap | `round` |
-| strokeLinejoin | `round` |
+```tsx
+// Inline icon (20px) - used in buttons, navigation
+<ChevronLeft size={20} strokeWidth={1.5} />
+
+// Standalone icon (24px) - used in hero areas, emphasis
+<Search size={24} strokeWidth={1.5} />
+
+// Emphasis stroke (2px) - used for primary actions
+<Send size={20} strokeWidth={2} />
+
+// Loading spinner
+<Loader2 size={20} strokeWidth={2} className="animate-spin" />
+```
+
+### Size Guidelines
+
+| Context | Size | strokeWidth |
+|---------|------|-------------|
+| Inline (buttons, nav) | `20` | `1.5` |
+| Standalone (hero) | `24` | `1.5` or `2` |
+| Small (badges) | `16` | `1.5` |
 
 ### Color Inheritance
 
@@ -246,8 +247,21 @@ Icons inherit color from parent via `currentColor`. Set parent's text color:
 
 ```tsx
 <button className="text-[var(--muted)] hover:text-[var(--foreground)]">
-  <svg stroke="currentColor">...</svg>
+  <ChevronLeft size={20} strokeWidth={1.5} />
 </button>
+```
+
+### Common Icons Reference
+
+```tsx
+// Navigation
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
+
+// Actions
+import { Search, Menu, Send, X } from "lucide-react";
+
+// Status
+import { Info, Loader2, Check, AlertCircle } from "lucide-react";
 ```
 
 ---
@@ -300,7 +314,7 @@ Icon-only buttons always have `aria-label`:
 **Inline spinner** for buttons:
 ```tsx
 {isLoading ? (
-  <svg className="w-5 h-5 animate-spin">...</svg>
+  <Loader2 size={20} strokeWidth={2} className="animate-spin" />
 ) : (
   <span>Submit</span>
 )}
@@ -314,6 +328,37 @@ Icon-only buttons always have `aria-label`:
   <div className="w-2 h-2 bg-[var(--muted)] rounded-full animate-bounce [animation-delay:0.3s]" />
 </div>
 ```
+
+**Shimmer skeleton** for async content (images, data):
+```tsx
+<div className="absolute inset-0 overflow-hidden">
+  <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite]
+    bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+</div>
+```
+
+### Delayed Loading Pattern
+
+To prevent flash of loading state for fast/cached responses, delay showing the loading indicator:
+
+```tsx
+const [isLoading, setIsLoading] = useState(true);
+const [showSkeleton, setShowSkeleton] = useState(false);
+
+useEffect(() => {
+  if (!isLoading) {
+    setShowSkeleton(false);
+    return;
+  }
+  const timer = setTimeout(() => setShowSkeleton(true), 300);
+  return () => clearTimeout(timer);
+}, [isLoading]);
+
+// Only render skeleton when showSkeleton is true
+{showSkeleton && <SkeletonLoader />}
+```
+
+**Why 300ms?** Fast enough to feel responsive, slow enough to skip for cached responses.
 
 ### Disabled States
 
@@ -353,11 +398,17 @@ Defined as:
 
 ### Skeleton Loading
 
+**Pulse skeleton** (for small elements like text placeholders):
 ```tsx
 className="skeleton"
 ```
-
 Provides pulsing animation with surface background.
+
+**Shimmer skeleton** (for large areas like images):
+```tsx
+className="animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent"
+```
+Provides sliding shimmer animation. See `@keyframes shimmer` in globals.css.
 
 ---
 

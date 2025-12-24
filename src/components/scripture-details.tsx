@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, Info } from "lucide-react";
 
 interface ScriptureDetailsProps {
   book: string;
@@ -50,21 +51,7 @@ export function ScriptureDetails({
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-[var(--radius-sm)] bg-[var(--surface)] flex items-center justify-center">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-[var(--muted)]"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4" />
-              <path d="M12 8h.01" />
-            </svg>
+            <Info size={16} strokeWidth={1.5} className="text-[var(--muted)]" />
           </div>
           <div>
             <p className="text-sm font-medium">Passage Details</p>
@@ -73,21 +60,13 @@ export function ScriptureDetails({
             </p>
           </div>
         </div>
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <ChevronDown
+          size={20}
+          strokeWidth={1.5}
           className={`text-[var(--muted)] transition-transform duration-[var(--motion-fast)] ${
             isExpanded ? "rotate-180" : ""
           }`}
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        />
       </button>
 
       {/* Expandable Content */}
