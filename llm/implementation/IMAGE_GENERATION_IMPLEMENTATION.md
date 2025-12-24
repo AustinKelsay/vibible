@@ -137,20 +137,23 @@ export const dynamic = 'force-dynamic';
 
 This disables Next.js server-side caching so the browser cache has full control.
 
-### OpenRouter Client Setup
+### OpenRouter API Setup
+
+The implementation uses direct HTTP requests to OpenRouter's chat completions API. The API key is validated early to prevent requests with missing credentials:
 
 ```ts
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": process.env.OPENROUTER_REFERRER || "http://localhost:3000",
-    "X-Title": process.env.OPENROUTER_TITLE || "vibible",
-  },
-});
+// Validate OpenRouter API key before proceeding
+const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+if (!openRouterApiKey || openRouterApiKey.trim() === "") {
+  console.error("OPENROUTER_API_KEY is missing or empty");
+  return NextResponse.json(
+    { error: "Server configuration error: OpenRouter API key is not configured" },
+    { status: 500 }
+  );
+}
 ```
 
-Uses the OpenAI SDK with OpenRouter's base URL for compatibility.
+Uses direct HTTP requests to OpenRouter's chat completions API with image modality support.
 
 ### Query Parameter Handling
 
@@ -175,18 +178,20 @@ The API builds different prompts based on whether a theme is provided:
 ```ts
 if (themeParam) {
   const theme = JSON.parse(themeParam);
-  prompt = `Biblical illustration: ${verseText}
+  prompt = `Create a biblical illustration for this verse: "${verseText}"
 
 Setting: ${theme.setting}
 Visual elements: ${theme.elements}
 Color palette: ${theme.palette}
-Style: ${theme.style}`;
+Style: ${theme.style}
+
+Generate a beautiful, reverent image that captures the essence of this scripture. Do not include any text, letters, or words in the image.`;
 }
 ```
 
 **Without theme (fallback):**
 ```ts
-prompt = `Biblical illustration: ${verseText}. Style: classical religious art, ethereal lighting, majestic`;
+prompt = `Create a biblical illustration for this verse: "${verseText}". Style: classical religious art, ethereal lighting, majestic. Generate a beautiful, reverent image. Do not include any text, letters, or words in the image.`;
 ```
 
 ### Image Generation Call
@@ -195,8 +200,10 @@ prompt = `Biblical illustration: ${verseText}. Style: classical religious art, e
 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
   method: "POST",
   headers: {
-    "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    "Authorization": `Bearer ${openRouterApiKey}`,
     "Content-Type": "application/json",
+    "HTTP-Referer": process.env.OPENROUTER_REFERRER || "http://localhost:3000",
+    "X-Title": process.env.OPENROUTER_TITLE || "vibible",
   },
   body: JSON.stringify({
     model: "google/gemini-2.5-flash-image-preview",
@@ -213,24 +220,45 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
 
 ### Response Handling
 
-The API handles both URL and base64 responses:
+The API handles multiple response formats from OpenRouter:
 
 ```ts
-const imageUrl = response.data?.[0]?.url;
-const imageB64 = response.data?.[0]?.b64_json;
+const data = await response.json();
+const message = data.choices?.[0]?.message;
 
-if (imageUrl) {
-  return NextResponse.json({ imageUrl }, {
-    headers: { 'Cache-Control': 'private, max-age=3600' },
-  });
-} else if (imageB64) {
-  return NextResponse.json({
-    imageUrl: `data:image/png;base64,${imageB64}`
-  }, {
-    headers: { 'Cache-Control': 'private, max-age=3600' },
-  });
+// OpenRouter returns images in a separate "images" field
+if (message?.images && Array.isArray(message.images)) {
+  for (const image of message.images) {
+    if (image.image_url?.url) {
+      return NextResponse.json({ imageUrl: image.image_url.url }, {
+        headers: { 'Cache-Control': 'private, max-age=3600' },
+      });
+    }
+  }
+}
+
+// Fallback: check content array (some models use this format)
+const content = message?.content;
+if (Array.isArray(content)) {
+  for (const part of content) {
+    if (part.type === "image_url" && part.image_url?.url) {
+      return NextResponse.json({ imageUrl: part.image_url.url }, {
+        headers: { 'Cache-Control': 'private, max-age=3600' },
+      });
+    }
+    if (part.inline_data?.data) {
+      const mimeType = part.inline_data.mime_type || "image/png";
+      return NextResponse.json({
+        imageUrl: `data:${mimeType};base64,${part.inline_data.data}`
+      }, {
+        headers: { 'Cache-Control': 'private, max-age=3600' },
+      });
+    }
+  }
 }
 ```
+
+The implementation checks for images in the `message.images` array first, then falls back to checking the `content` array for both URL-based and inline base64 image data.
 
 ---
 
@@ -304,9 +332,10 @@ Image URL or base64 returned and displayed
 
 ### Server Errors
 
+- Missing or empty `OPENROUTER_API_KEY` returns HTTP 500 with clear error message
 - OpenRouter API failures caught and logged
 - Returns `{ error: "Failed to generate image" }` with 500 status
-- Missing image data returns `{ error: "No image generated" }`
+- Missing image data returns `{ error: "No image generated - model may not support image output" }` with 500 status
 - Invalid theme JSON falls back to simple prompt
 
 ### Client Errors
