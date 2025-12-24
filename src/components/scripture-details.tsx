@@ -23,10 +23,10 @@ interface ScriptureDetailsProps {
 }
 
 const defaultVersion = {
-  code: "NIV",
-  name: "New International Version",
+  code: "KJV",
+  name: "King James Version",
   language: "English",
-  year: 2011,
+  year: 1611,
 };
 
 export function ScriptureDetails({
@@ -85,10 +85,10 @@ export function ScriptureDetails({
               </p>
             </div>
             <div className="divide-y divide-[var(--divider)]">
-              <DetailRow label="Version" value={version?.code || "NIV"} />
-              <DetailRow label="Full Name" value={version?.name || "New International Version"} />
+              <DetailRow label="Version" value={version?.code || "KJV"} />
+              <DetailRow label="Full Name" value={version?.name || "King James Version"} />
               <DetailRow label="Language" value={version?.language || "English"} />
-              <DetailRow label="Edition" value={String(version?.year || 2011)} />
+              <DetailRow label="Edition" value={String(version?.year || 1611)} />
             </div>
           </div>
 
@@ -130,8 +130,8 @@ export function ScriptureDetails({
 
           {/* Copyright Notice */}
           <p className="text-xs text-[var(--muted)] text-center leading-relaxed px-4">
-            Scripture quotations marked (NIV) are taken from the Holy Bible, New International
-            Version®, NIV®. Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.™
+            Scripture quotations are from the King James Version (KJV),
+            which is in the public domain.
           </p>
         </div>
       </div>

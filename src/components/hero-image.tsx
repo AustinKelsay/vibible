@@ -18,6 +18,8 @@ interface HeroImageProps {
   chapterTheme?: ChapterTheme;
   verseNumber?: number;
   totalVerses?: number;
+  prevUrl?: string | null;
+  nextUrl?: string | null;
 }
 
 export function HeroImage({
@@ -25,11 +27,9 @@ export function HeroImage({
   caption = "In the beginning",
   verseText,
   chapterTheme,
-  verseNumber,
-  totalVerses,
+  prevUrl,
+  nextUrl,
 }: HeroImageProps) {
-  const hasPrevious = verseNumber !== undefined && verseNumber > 1;
-  const hasNext = verseNumber !== undefined && totalVerses !== undefined && verseNumber < totalVerses;
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -165,18 +165,18 @@ export function HeroImage({
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-transparent to-transparent opacity-60" />
 
         {/* Floating Navigation Arrows */}
-        {hasPrevious && verseNumber && (
+        {prevUrl && (
           <Link
-            href={`/verse/${verseNumber - 1}`}
+            href={prevUrl}
             className="absolute left-3 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-[var(--background)]/70 backdrop-blur-sm text-[var(--foreground)] hover:bg-[var(--background)]/90 transition-all duration-[var(--motion-fast)] shadow-lg"
             aria-label="Previous verse"
           >
             <ChevronLeft size={24} strokeWidth={2} />
           </Link>
         )}
-        {hasNext && verseNumber && (
+        {nextUrl && (
           <Link
-            href={`/verse/${verseNumber + 1}`}
+            href={nextUrl}
             className="absolute right-3 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full bg-[var(--background)]/70 backdrop-blur-sm text-[var(--foreground)] hover:bg-[var(--background)]/90 transition-all duration-[var(--motion-fast)] shadow-lg"
             aria-label="Next verse"
           >

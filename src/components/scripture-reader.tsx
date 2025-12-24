@@ -14,6 +14,8 @@ interface ScriptureReaderProps {
   verse: Verse;
   verseNumber: number;
   totalVerses: number;
+  prevUrl?: string | null;
+  nextUrl?: string | null;
 }
 
 export function ScriptureReader({
@@ -22,9 +24,9 @@ export function ScriptureReader({
   verse,
   verseNumber,
   totalVerses,
+  prevUrl,
+  nextUrl,
 }: ScriptureReaderProps) {
-  const hasPrevious = verseNumber > 1;
-  const hasNext = verseNumber < totalVerses;
 
   return (
     <article className="px-4 md:px-6 py-6 max-w-2xl mx-auto">
@@ -47,9 +49,9 @@ export function ScriptureReader({
 
       {/* Verse Navigation */}
       <nav className="flex justify-between items-center mt-12 pt-6 border-t border-[var(--divider)]">
-        {hasPrevious ? (
+        {prevUrl ? (
           <Link
-            href={`/verse/${verseNumber - 1}`}
+            href={prevUrl}
             className="flex items-center gap-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)] min-h-[44px] px-3 -ml-3"
             aria-label="Previous verse"
           >
@@ -64,9 +66,9 @@ export function ScriptureReader({
           {verseNumber} of {totalVerses}
         </span>
 
-        {hasNext ? (
+        {nextUrl ? (
           <Link
-            href={`/verse/${verseNumber + 1}`}
+            href={nextUrl}
             className="flex items-center gap-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)] min-h-[44px] px-3 -mr-3"
             aria-label="Next verse"
           >

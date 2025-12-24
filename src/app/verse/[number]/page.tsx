@@ -1,99 +1,19 @@
 import { redirect } from "next/navigation";
-import { Chat } from "@/components/chat";
-import { HeroImage } from "@/components/hero-image";
-import { ScriptureDetails } from "@/components/scripture-details";
-import { ScriptureReader } from "@/components/scripture-reader";
-import { genesis1Verses, genesis1Theme } from "@/data/genesis-1";
-import { Search, Menu } from "lucide-react";
 
 interface VersePageProps {
   params: Promise<{ number: string }>;
 }
 
-export default async function VersePage({ params }: VersePageProps) {
+// Redirect old /verse/[number] routes to new /genesis/1/[number] format
+export default async function OldVersePage({ params }: VersePageProps) {
   const { number } = await params;
   const verseNumber = parseInt(number, 10);
 
-  // Redirect invalid verse numbers to verse 1
-  if (isNaN(verseNumber) || verseNumber < 1 || verseNumber > genesis1Verses.length) {
-    redirect("/verse/1");
+  // Validate verse number (Genesis 1 has 31 verses)
+  if (!isNaN(verseNumber) && verseNumber >= 1 && verseNumber <= 31) {
+    redirect(`/genesis/1/${verseNumber}`);
   }
 
-  const verse = genesis1Verses[verseNumber - 1];
-  const totalVerses = genesis1Verses.length;
-
-  return (
-    <div className="flex min-h-screen flex-col bg-[var(--background)]">
-      {/* Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-[var(--background)]/80 border-b border-[var(--divider)]">
-        <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
-          <h1 className="text-lg font-semibold tracking-tight">Vibible</h1>
-          <nav className="flex items-center gap-1">
-            <button
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)]"
-              aria-label="Search"
-            >
-              <Search size={20} strokeWidth={1.5} />
-            </button>
-            <button
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--muted)] hover:text-[var(--foreground)] transition-colors duration-[var(--motion-fast)]"
-              aria-label="Menu"
-            >
-              <Menu size={20} strokeWidth={1.5} />
-            </button>
-          </nav>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col">
-        {/* Hero Image */}
-        <HeroImage
-          verseText={verse.text}
-          caption={verse.text}
-          chapterTheme={genesis1Theme}
-          verseNumber={verseNumber}
-          totalVerses={totalVerses}
-        />
-
-        {/* Scripture Reader */}
-        <div className="flex-1 py-8">
-          <ScriptureReader
-            book="Genesis"
-            chapter={1}
-            verse={verse}
-            verseNumber={verseNumber}
-            totalVerses={totalVerses}
-          />
-        </div>
-
-        {/* Scripture Details */}
-        <div className="max-w-2xl mx-auto w-full">
-          <ScriptureDetails
-            book="Genesis"
-            chapter={1}
-            verseRange={String(verseNumber)}
-            imageAttribution={{
-              title: "The Creation",
-              artist: "AI Generated",
-              source: "Vibible",
-            }}
-          />
-        </div>
-      </main>
-
-      {/* Chat - Fixed at Bottom */}
-      <div className="sticky bottom-0 z-40 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)]">
-        <Chat
-          context={{
-            book: "Genesis",
-            chapter: 1,
-            verseRange: String(verseNumber),
-            heroCaption: verse.text,
-            verses: [verse],
-          }}
-        />
-      </div>
-    </div>
-  );
+  // Invalid verse number, go to Genesis 1:1
+  redirect("/genesis/1/1");
 }

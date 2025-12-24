@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Home() {
-  redirect("/verse/1");
+  redirect("/genesis/1/1");
 }
