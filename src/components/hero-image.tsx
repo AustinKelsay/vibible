@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { usePreferences } from "@/context/preferences-context";
 
 interface ChapterTheme {
   setting: string;
@@ -42,6 +43,7 @@ export function HeroImage({
   nextVerse,
   currentReference,
 }: HeroImageProps) {
+  const { imageModel } = usePreferences();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -89,12 +91,14 @@ export function HeroImage({
         setIsLoading(true);
         setShowSkeleton(false);
         setError(null);
+        setImageUrl(null); // Clear old image to show loading state immediately
         const params = new URLSearchParams();
         if (verseText) params.set("text", verseText);
         if (chapterTheme) params.set("theme", JSON.stringify(chapterTheme));
         if (prevVerse) params.set("prevVerse", JSON.stringify(prevVerse));
         if (nextVerse) params.set("nextVerse", JSON.stringify(nextVerse));
         if (currentReference) params.set("reference", currentReference);
+        if (imageModel) params.set("model", imageModel);
         const url = `/api/generate-image${params.toString() ? `?${params.toString()}` : ""}`;
         const response = await fetch(url, {
           signal: abortController.signal,
@@ -138,7 +142,7 @@ export function HeroImage({
     return () => {
       abortController.abort();
     };
-  }, [verseText, chapterTheme, prevVerse, nextVerse, currentReference]);
+  }, [verseText, chapterTheme, prevVerse, nextVerse, currentReference, imageModel]);
 
   return (
     <figure className="relative w-full">
