@@ -97,7 +97,7 @@ export async function GET() {
       id: model.id,
       name: model.name,
       provider: getProviderName(model.id),
-      pricing: { imageOutput: model.pricing?.image_output },
+      pricing: { imageOutput: model.pricing?.image },
     }));
 
   return NextResponse.json({ models: imageModels });
@@ -132,7 +132,7 @@ interface PreferencesContextType {
 
 **Visual Feedback:**
 - When model changes, old image is cleared immediately
-- Placeholder gradient shows with shimmer animation (after 300ms)
+- Placeholder gradient shows with pulse animation
 - New image replaces placeholder when generation completes
 
 ### ImageModelSelector Component
@@ -252,31 +252,18 @@ useEffect(() => {
 }, [verseText, chapterTheme, prevVerse, nextVerse, currentReference, imageModel]);
 ```
 
-### Delayed Loading Pattern
+### Loading State
 
-To prevent a flash of loading state for cached responses, we delay showing the skeleton:
+When loading, a placeholder with pulse animation is shown:
 
 ```tsx
-// Only show skeleton after a delay to prevent flash for cached responses
-useEffect(() => {
-  if (!isLoading) {
-    setShowSkeleton(false);
-    return;
-  }
-
-  const timer = setTimeout(() => {
-    if (isLoading) {
-      setShowSkeleton(true);
-    }
-  }, 300);  // 300ms delay
-
-  return () => clearTimeout(timer);
-}, [isLoading]);
+{/* Inside the !imageUrl placeholder block */}
+{!error && (
+  <div className="absolute inset-0 bg-white/10 dark:bg-white/5 animate-pulse" />
+)}
 ```
 
-**Behavior:**
-- **Fast/cached response (<300ms):** Placeholder → Image (no skeleton shown)
-- **Slow response (>300ms):** Placeholder → Skeleton shimmer → Image
+**Key implementation detail:** The pulse shows based on content state (`!error` inside the `!imageUrl` block) rather than an `isLoading` flag. This avoids React 18's automatic batching from skipping the loading render when cached responses return quickly.
 
 ### Placeholder UI
 
@@ -284,7 +271,7 @@ While loading or on error, a gradient placeholder is shown:
 
 - Warm gradient background (amber/orange/rose)
 - Decorative blur element simulating light
-- Skeleton shimmer animation (only after 300ms delay)
+- Pulse animation overlay while loading
 - Error text in red if generation fails
 
 ### Floating Navigation Arrows

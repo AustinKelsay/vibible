@@ -16,7 +16,7 @@ interface OpenRouterModel {
     output_modalities?: string[];
   };
   pricing?: {
-    image_output?: string;
+    image?: string;
   };
 }
 
@@ -75,7 +75,7 @@ export async function fetchImageModels(openRouterApiKey: string): Promise<ImageM
         name: model.name || model.id,
         provider: getProviderName(model.id),
         pricing: {
-          imageOutput: model.pricing?.image_output,
+          imageOutput: model.pricing?.image,
         },
       }))
       .sort((a: ImageModel, b: ImageModel) => {

@@ -46,24 +46,7 @@ export function HeroImage({
   const { imageModel } = usePreferences();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showSkeleton, setShowSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Only show skeleton after a delay to prevent flash for cached responses
-  useEffect(() => {
-    if (!isLoading) {
-      setShowSkeleton(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      if (isLoading) {
-        setShowSkeleton(true);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [isLoading]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -89,7 +72,6 @@ export function HeroImage({
     async function generateImage() {
       try {
         setIsLoading(true);
-        setShowSkeleton(false);
         setError(null);
         setImageUrl(null); // Clear old image to show loading state immediately
         const params = new URLSearchParams();
@@ -107,6 +89,7 @@ export function HeroImage({
         });
 
         if (response.status === 403) {
+          setError("Image generation is disabled");
           return;
         }
 
@@ -164,11 +147,9 @@ export function HeroImage({
             {/* Horizon line */}
             <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-stone-200/50 to-transparent dark:from-stone-800/30" />
 
-            {/* Skeleton shimmer overlay - only shows after delay */}
-            {showSkeleton && (
-              <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent dark:via-white/5" />
-              </div>
+            {/* Loading pulse overlay - shows until image loads or error occurs */}
+            {!error && (
+              <div className="absolute inset-0 bg-white/10 dark:bg-white/5 animate-pulse" />
             )}
 
             {/* Error state */}
