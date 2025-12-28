@@ -95,41 +95,45 @@ export async function GET(request: Request) {
     narrativeContext += "\n\nThis is part of a visual storyboard through Scripture. Maintain visual consistency with the flow of the narrative while focusing on THIS verse's moment.";
   }
 
+  const noTextInstruction = "CRITICAL: No text, letters, words, writing, signs, inscriptions, scrolls, captions, or readable characters.";
+  const styleDirection = "Stylized, painterly, biblical-era, mysterious, expansive; gritty, raw texture; mature, grounded color; avoid photorealism, childish cartoon look, and modern artifacts.";
+  const framingInstruction = "FRAMING: cinematic composition (not a photo) filling the frame edge to edge; the scene is reality, not artwork. No borders, frames, canvas, wall-hung paintings, posters, gallery/museum settings, or mockups. The viewer is IN the scene.";
+
   let prompt: string;
   if (themeParam) {
     try {
       const theme = JSON.parse(themeParam);
-      prompt = `CRITICAL REQUIREMENT: Generate a purely visual image with absolutely NO TEXT, NO LETTERS, NO WORDS, NO WRITING of any kind. No signs, labels, captions, titles, inscriptions, scrolls with writing, or any readable characters.
+      prompt = `${noTextInstruction}
 
-Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
+Render a stylized biblical-era scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
 Setting: ${theme.setting}
 Visual elements: ${theme.elements}
 Color palette: ${theme.palette}
-Style: ${theme.style}
+Style: ${theme.style}; ${styleDirection}
 
-FRAMING: Cinematic screenshot from a film - direct camera view that fills the entire frame edge to edge. No borders, frames, gallery walls, or museum settings. The viewer is IN the scene.
+${framingInstruction}
 
 ${aspectRatioInstruction}`;
     } catch {
-      prompt = `CRITICAL REQUIREMENT: Generate a purely visual image with absolutely NO TEXT, NO LETTERS, NO WORDS, NO WRITING of any kind. No signs, labels, captions, titles, inscriptions, scrolls with writing, or any readable characters.
+      prompt = `${noTextInstruction}
 
-Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
+Render a stylized biblical-era scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
-Style: ethereal, majestic, dramatic lighting. Cinematic movie still that fills the entire frame.
+Style: ${styleDirection} Luminous, dramatic lighting.
 
-FRAMING: Cinematic screenshot from a film - direct camera view that fills the entire frame edge to edge. No borders, frames, gallery walls, or museum settings. The viewer is IN the scene.
+${framingInstruction}
 
 ${aspectRatioInstruction}`;
     }
   } else {
-    prompt = `Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
+    prompt = `${noTextInstruction}
 
-Style: ethereal, majestic, dramatic lighting. Cinematic movie still that fills the entire frame.
+Render a stylized biblical-era scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
-CRITICAL: NO TEXT IN IMAGE. Do not render any text, letters, words, labels, signs, captions, titles, or writing of any kind.
+Style: ${styleDirection} Luminous, dramatic lighting.
 
-FRAMING: This is a cinematic screenshot from a film - a direct camera view of the scene that fills the entire frame edge to edge. No borders, no frames, no gallery walls, no museum setting, no picture hanging on a wall. The viewer is IN the scene, not looking at artwork.
+${framingInstruction}
 
 ${aspectRatioInstruction}`;
   }
