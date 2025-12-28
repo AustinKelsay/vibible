@@ -95,9 +95,12 @@ export async function GET(request: Request) {
     narrativeContext += "\n\nThis is part of a visual storyboard through Scripture. Maintain visual consistency with the flow of the narrative while focusing on THIS verse's moment.";
   }
 
-  const noTextInstruction = "CRITICAL: No text, letters, words, writing, signs, inscriptions, scrolls, captions, or readable characters.";
+  const noTextInstruction = `ABSOLUTE RULE: The image must contain ZERO text of any kind.
+No letters, words, numbers, punctuation, symbols, runes, glyphs, sigils, logos, watermarks, captions, subtitles, labels, signage, banners, or inscriptions.
+Do not render the verse text or any readable/unreadable text-like marks; use purely visual storytelling.
+If a surface would normally contain writing (scrolls, tablets, signs), leave it blank or use non-letter abstract texture.`;
   const styleDirection = "Stylized, painterly, biblical-era, mysterious, expansive; gritty, raw texture; mature, grounded color; avoid photorealism, childish cartoon look, and modern artifacts.";
-  const framingInstruction = "FRAMING: cinematic composition (not a photo) filling the frame edge to edge; the scene is reality, not artwork. No borders, frames, canvas, wall-hung paintings, posters, gallery/museum settings, or mockups. The viewer is IN the scene.";
+  const framingInstruction = "FRAMING: cinematic composition (not a photo) filling the frame edge to edge; the scene is reality, not artwork. No borders, frames, canvas, wall-hung paintings, posters, gallery/museum settings, mockups, or letterboxing. Do not leave blank margins. Avoid solid white or empty backgrounds; if there is any negative space, make it atmospheric darkness, clouds, or textured sky/land so the entire 16:9 frame is visually filled. The viewer is IN the scene.";
 
   let prompt: string;
   if (themeParam) {

@@ -84,6 +84,7 @@ export default async function VersePage({ params }: VersePageProps) {
     prevVerse,
     nextVerse,
   };
+  const currentReference = `${bookData.name} ${location.chapter}:${location.verse}`;
 
   return (
     <LayoutWrapper>
@@ -105,7 +106,7 @@ export default async function VersePage({ params }: VersePageProps) {
           nextUrl={nextUrl}
           prevVerse={prevVerse}
           nextVerse={nextVerse}
-          currentReference={`${bookData.name} ${location.chapter}:${location.verse}`}
+          currentReference={currentReference}
         />
 
         {/* Scripture Reader */}
@@ -127,11 +128,10 @@ export default async function VersePage({ params }: VersePageProps) {
             book={bookData.name}
             chapter={location.chapter}
             verseRange={String(location.verse)}
-            imageAttribution={{
-              title: "Scripture Illustration",
-              artist: "AI Generated",
-              source: "Visibible",
-            }}
+            verseText={verseData.text}
+            chapterVerseCount={totalVerses}
+            testament={bookData.testament}
+            reference={currentReference}
           />
         </div>
       </main>
