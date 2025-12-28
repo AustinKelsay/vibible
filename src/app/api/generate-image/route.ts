@@ -35,6 +35,7 @@ export async function GET(request: Request) {
   const nextVerseParam = searchParams.get("nextVerse");
   const reference = searchParams.get("reference") || "Scripture";
   const requestedModelId = searchParams.get("model");
+  const generationParam = searchParams.get("generation");
   let modelId = DEFAULT_IMAGE_MODEL;
   if (requestedModelId && requestedModelId !== DEFAULT_IMAGE_MODEL) {
     const result = await fetchImageModels(openRouterApiKey);
@@ -59,6 +60,27 @@ export async function GET(request: Request) {
   // Build prompt with storyboard context for visual continuity
   const aspectRatioInstruction = "Generate the image in WIDESCREEN LANDSCAPE format with a 16:9 aspect ratio (wide, not square).";
 
+  /**
+   * Get ordinal suffix for a number (1st, 2nd, 3rd, 4th, etc.)
+   */
+  function getOrdinalSuffix(n: number): string {
+    const j = n % 10;
+    const k = n % 100;
+    if (j === 1 && k !== 11) return "st";
+    if (j === 2 && k !== 12) return "nd";
+    if (j === 3 && k !== 13) return "rd";
+    return "th";
+  }
+
+  // Add generation diversity for non-first images
+  let generationNote = "";
+  if (generationParam) {
+    const generationNum = parseInt(generationParam, 10);
+    if (!isNaN(generationNum) && generationNum > 1) {
+      generationNote = `\n\nNOTE: This is the ${generationNum}${getOrdinalSuffix(generationNum)} generation of this image. Create a fresh, diverse interpretation while maintaining the core biblical scene.`;
+    }
+  }
+
   // Build narrative context section
   let narrativeContext = "";
   if (prevVerse || nextVerse) {
@@ -79,7 +101,7 @@ export async function GET(request: Request) {
       const theme = JSON.parse(themeParam);
       prompt = `CRITICAL REQUIREMENT: Generate a purely visual image with absolutely NO TEXT, NO LETTERS, NO WORDS, NO WRITING of any kind. No signs, labels, captions, titles, inscriptions, scrolls with writing, or any readable characters.
 
-Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}
+Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
 Setting: ${theme.setting}
 Visual elements: ${theme.elements}
@@ -92,7 +114,7 @@ ${aspectRatioInstruction}`;
     } catch {
       prompt = `CRITICAL REQUIREMENT: Generate a purely visual image with absolutely NO TEXT, NO LETTERS, NO WORDS, NO WRITING of any kind. No signs, labels, captions, titles, inscriptions, scrolls with writing, or any readable characters.
 
-Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}
+Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
 Style: ethereal, majestic, dramatic lighting. Cinematic movie still that fills the entire frame.
 
@@ -101,7 +123,7 @@ FRAMING: Cinematic screenshot from a film - direct camera view that fills the en
 ${aspectRatioInstruction}`;
     }
   } else {
-    prompt = `Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}
+    prompt = `Render a vivid biblical scene for ${reference}: "${verseText}"${narrativeContext}${generationNote}
 
 Style: ethereal, majestic, dramatic lighting. Cinematic movie still that fills the entire frame.
 
@@ -152,7 +174,7 @@ ${aspectRatioInstruction}`;
     if (message?.images && Array.isArray(message.images)) {
       for (const image of message.images) {
         if (image.image_url?.url) {
-          return NextResponse.json({ imageUrl: image.image_url.url }, {
+          return NextResponse.json({ imageUrl: image.image_url.url, model: modelId }, {
             headers: { 'Cache-Control': 'private, max-age=3600' },
           });
         }
@@ -164,14 +186,15 @@ ${aspectRatioInstruction}`;
     if (Array.isArray(content)) {
       for (const part of content) {
         if (part.type === "image_url" && part.image_url?.url) {
-          return NextResponse.json({ imageUrl: part.image_url.url }, {
+          return NextResponse.json({ imageUrl: part.image_url.url, model: modelId }, {
             headers: { 'Cache-Control': 'private, max-age=3600' },
           });
         }
         if (part.inline_data?.data) {
           const mimeType = part.inline_data.mime_type || "image/png";
           return NextResponse.json({
-            imageUrl: `data:${mimeType};base64,${part.inline_data.data}`
+            imageUrl: `data:${mimeType};base64,${part.inline_data.data}`,
+            model: modelId
           }, {
             headers: { 'Cache-Control': 'private, max-age=3600' },
           });
