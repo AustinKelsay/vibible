@@ -1,9 +1,23 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 function resolveTier(currentTier: string, credits: number): "free" | "paid" | "admin" {
   if (currentTier === "admin") return "admin";
   return credits > 0 ? "paid" : "free";
+}
+
+/**
+ * Validates that a credit amount is positive and finite.
+ * 
+ * @param amount - The amount to validate
+ * @throws Error if amount is not positive or not finite
+ */
+export function validatePositiveAmount(amount: number): void {
+  if (amount <= 0 || !Number.isFinite(amount)) {
+    throw new Error(
+      `Amount must be a positive number, received: ${amount}`
+    );
+  }
 }
 
 /**
@@ -95,6 +109,12 @@ export const updateLastSeen = mutation({
 /**
  * Add credits to a session (e.g., after payment).
  * Records the transaction in the credit ledger.
+ * 
+ * @param sid - Session ID
+ * @param amount - Must be a positive number (greater than 0)
+ * @param reason - Reason for adding credits (e.g., "payment", "refund")
+ * @param invoiceId - Optional invoice ID associated with this credit addition
+ * @throws Error if amount is not positive or session is not found
  */
 export const addCredits = mutation({
   args: {
@@ -104,6 +124,9 @@ export const addCredits = mutation({
     invoiceId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Validate that amount is positive
+    validatePositiveAmount(args.amount);
+
     const session = await ctx.db
       .query("sessions")
       .withIndex("by_sid", (q) => q.eq("sid", args.sid))
@@ -452,10 +475,14 @@ export const getCreditHistory = query({
 });
 
 /**
- * Upgrade a session to admin tier.
- * Called after successful admin password validation.
+ * Internal mutation to upgrade a session to admin tier.
+ * Only callable from server-side code (e.g., API routes) after password validation.
+ * This prevents privilege escalation attacks from client-side code.
+ * 
+ * @param sid - Session ID to upgrade
+ * @throws Error if session is not found
  */
-export const upgradeToAdmin = mutation({
+export const upgradeToAdmin = internalMutation({
   args: {
     sid: v.string(),
   },

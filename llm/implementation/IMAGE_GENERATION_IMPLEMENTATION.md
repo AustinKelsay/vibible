@@ -105,9 +105,37 @@ const saveImageAction = useAction(api.verseImages.saveImage);
 
 `HeroImage` fetches `/api/image-models` to surface the current model's `creditsCost` and ETA in the UI:
 
-- Defaults: 20 credits and 12s for unpriced models.
-- `canGenerate` is true when Convex is disabled, admin tier is active, or paid tier has enough credits.
+- Defaults: 20 credits and 12s for unpriced models (only used after pricing fetch completes without data).
+- `canGenerate` is true when Convex is disabled, admin tier is active, or paid tier has enough credits **and pricing has loaded**.
 - Auto-generation only runs when `canGenerate` is true and the session has loaded.
+
+#### Pricing Race Condition Prevention
+
+To prevent auto-generation from proceeding before actual model costs are known, `HeroImage` tracks a `pricingLoaded` boolean:
+
+```tsx
+const [pricingLoaded, setPricingLoaded] = useState(false);
+
+// In useEffect for pricing fetch:
+// - Reset to false when imageModel changes
+// - Set to true immediately on cache hit
+// - Set to true in finally block after fetch completes (success or error)
+
+const pricingPending = isConvexEnabled && !isAdmin && !pricingLoaded;
+const canGenerate = !isConvexEnabled || isAdmin || (pricingLoaded && tier === "paid" && credits >= effectiveCost);
+const showCreditsCost = isConvexEnabled && !isAdmin && pricingLoaded;
+```
+
+**Why this matters:** Without `pricingLoaded`, the fallback cost (20 credits) would be used before the actual model price is fetched. If a user has 25 credits but selects a 50-credit model, they could:
+1. See "Generate" button enabled (because 25 >= 20 fallback)
+2. Click generate or trigger auto-generation
+3. Get a 402 error from the server (which validates actual cost)
+
+With `pricingLoaded`:
+- Generation is blocked until pricing is confirmed
+- UI shows "Loading pricing..." state while fetching
+- Credits cost and ETA display only after pricing is known
+- Server-side validation remains the authoritative check, but client-side UX is consistent
 
 ### Unpriced Model Behavior
 

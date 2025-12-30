@@ -274,13 +274,18 @@ function HeroImageBase({
 
   // Fetch model pricing info
   const [modelPricing, setModelPricing] = useState<ModelPricing>({ creditsCost: null, etaSeconds: 12 });
+  const [pricingLoaded, setPricingLoaded] = useState(false);
   const modelPricingCache = useRef<Map<string, ModelPricing>>(new Map());
 
   useEffect(() => {
+    let isCancelled = false;
+    setPricingLoaded(false);
+
     // Check cache first
     const cached = modelPricingCache.current.get(imageModel);
     if (cached) {
       setModelPricing(cached);
+      setPricingLoaded(true);
       return;
     }
 
@@ -308,15 +313,24 @@ function HeroImageBase({
       })
       .catch(() => {
         // Keep defaults on error
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setPricingLoaded(true);
+        }
       });
+    return () => {
+      isCancelled = true;
+    };
   }, [imageModel]);
 
   // Determine if user can generate (has sufficient credits or is admin)
   const effectiveCost = modelPricing.creditsCost ?? 20; // Default 20 for unpriced models
   const effectiveEta = modelPricing.etaSeconds;
   const isAdmin = tier === "admin";
-  const canGenerate = !isConvexEnabled || isAdmin || (tier === "paid" && credits >= effectiveCost);
-  const showCreditsCost = isConvexEnabled && !isAdmin;
+  const pricingPending = isConvexEnabled && !isAdmin && !pricingLoaded;
+  const canGenerate = !isConvexEnabled || isAdmin || (pricingLoaded && tier === "paid" && credits >= effectiveCost);
+  const showCreditsCost = isConvexEnabled && !isAdmin && pricingLoaded;
   const hasExistingImages = (imageHistory?.length || 0) > 0;
 
   // Create verse ID for Convex query
@@ -806,7 +820,17 @@ function HeroImageBase({
                 </div>
 
                 {/* CTA Button - contextual based on canGenerate */}
-                {canGenerate ? (
+                {pricingPending ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Fetching live model pricing..."
+                    className="min-h-[44px] px-5 inline-flex items-center gap-2 rounded-[var(--radius-full)] bg-[var(--surface)] text-[var(--muted)] border border-[var(--divider)]/70 opacity-80 cursor-not-allowed"
+                  >
+                    <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                    <span className="text-sm font-medium">Loading pricing...</span>
+                  </button>
+                ) : canGenerate ? (
                   <button
                     onClick={handleManualRegenerate}
                     className="min-h-[44px] px-5 inline-flex items-center gap-2 rounded-[var(--radius-full)] bg-[var(--accent)] text-[var(--accent-text)] hover:bg-[var(--accent-hover)] transition-colors duration-[var(--motion-fast)] focus-ring"
@@ -892,7 +916,18 @@ function HeroImageBase({
                   </button>
                 </div>
 
-                {canGenerate ? (
+                {pricingPending ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Fetching live model pricing..."
+                    className="min-h-[44px] px-3 inline-flex items-center gap-2 rounded-[var(--radius-full)] border border-[var(--divider)] bg-[var(--background)] text-[var(--muted)] opacity-70 cursor-not-allowed"
+                    aria-label="Loading pricing"
+                  >
+                    <Loader2 size={18} strokeWidth={2} className="animate-spin" />
+                    <span className="text-sm">Loading pricing...</span>
+                  </button>
+                ) : canGenerate ? (
                   <button
                     onClick={handleManualRegenerate}
                     disabled={isGenerating}

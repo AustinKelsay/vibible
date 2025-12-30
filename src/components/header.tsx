@@ -18,7 +18,7 @@ export function Header() {
     <header className="z-50 bg-[var(--background)] border-b border-[var(--divider)]">
       <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* Brand */}
-        <h1 className="text-lg font-semibold tracking-tight">Vibible</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Visibible</h1>
 
         {/* Actions */}
         <nav className="flex items-center">

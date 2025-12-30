@@ -111,7 +111,7 @@ export function OnboardingModal() {
         {/* Header */}
         <div className="text-center mb-6">
           <h2 className="text-xl font-semibold text-[var(--foreground)]">
-            Welcome to Vibible
+            Welcome to Visibible
           </h2>
           <p className="text-[var(--muted)] mt-1">
             AI-powered Scripture visualization

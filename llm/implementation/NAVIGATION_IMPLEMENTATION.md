@@ -378,7 +378,7 @@ Contains navigation triggers and user controls.
 
 ### Component Structure
 
-```
+```text
 Header
 ├── Left: Brand ("Visibible")
 ├── Center: Controls (responsive)
