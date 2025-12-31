@@ -85,7 +85,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     // Upgrade session to admin
-    await convex.mutation(api.sessions.upgradeToAdmin, { sid });
+    await convex.action(api.sessions.upgradeToAdmin, {
+      sid,
+      serverSecret: adminPasswordSecret,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -100,7 +100,7 @@ If Convex is not configured, session and payment routes return free defaults or 
 | `releaseReservation` | Mutation | `sid, generationId` | `{ success, newBalance, alreadyReleased? }` |
 | `deductCredits` | Mutation | `sid, amount, modelId, generationId, costUsd?` | `{ success, newBalance, converted?, alreadyCharged? }` or `{ success: false, error, required, available }` |
 | `getCreditHistory` | Query | `sid, limit?` | `Array<{ delta, reason, modelId, generationId, createdAt }>` |
-| `upgradeToAdmin` | Mutation | `sid` | `{ success: true }` |
+| `upgradeToAdmin` | Action | `sid` | `{ success: true }` |
 
 **Note:** `addCredits` accepts `invoiceId` but it is not currently stored in the ledger (reserved for future use).
 
@@ -252,6 +252,26 @@ Generate secrets:
 openssl rand -base64 32
 # Optional: use a separate random value or a hash of the admin password as the HMAC secret.
 node -e "console.log(require('crypto').createHash('sha256').update('your-secret-admin-password').digest('hex'))"
+```
+
+### Dual-Environment Configuration
+
+Some environment variables must be set in **both** Next.js (`.env.local`) and Convex:
+
+| Variable | Next.js | Convex | Notes |
+|----------|---------|--------|-------|
+| `ADMIN_PASSWORD_SECRET` | ✅ | ✅ | Must match exactly in both environments |
+
+**Why?** The admin login flow works in two stages:
+1. Next.js API route validates the password using HMAC with `ADMIN_PASSWORD_SECRET`
+2. Convex action re-validates the secret server-side before upgrading the session
+
+If the Convex environment doesn't have the secret, the action throws "Unauthorized".
+
+**Set Convex env vars:**
+```bash
+npx convex env set ADMIN_PASSWORD_SECRET "your-value-here"
+npx convex env list  # verify
 ```
 
 ---

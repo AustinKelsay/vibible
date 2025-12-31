@@ -1,5 +1,6 @@
-import { internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 
 function resolveTier(currentTier: string, credits: number): "free" | "paid" | "admin" {
   if (currentTier === "admin") return "admin";
@@ -476,13 +477,12 @@ export const getCreditHistory = query({
 
 /**
  * Internal mutation to upgrade a session to admin tier.
- * Only callable from server-side code (e.g., API routes) after password validation.
- * This prevents privilege escalation attacks from client-side code.
- * 
+ * Only callable from Convex actions after authorization.
+ *
  * @param sid - Session ID to upgrade
  * @throws Error if session is not found
  */
-export const upgradeToAdmin = internalMutation({
+export const upgradeToAdminInternal = internalMutation({
   args: {
     sid: v.string(),
   },
@@ -497,6 +497,35 @@ export const upgradeToAdmin = internalMutation({
     }
 
     await ctx.db.patch(session._id, { tier: "admin" });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Public action to upgrade a session to admin tier.
+ * Validates a server-side secret before calling the internal mutation.
+ * This allows API routes to call admin upgrade while keeping it secure.
+ *
+ * @param sid - Session ID to upgrade
+ * @param serverSecret - Secret that must match ADMIN_PASSWORD_SECRET env var
+ * @throws Error if secret is invalid or session is not found
+ */
+export const upgradeToAdmin = action({
+  args: {
+    sid: v.string(),
+    serverSecret: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const expectedSecret = process.env.ADMIN_PASSWORD_SECRET;
+
+    if (!expectedSecret || args.serverSecret !== expectedSecret) {
+      throw new Error("Unauthorized");
+    }
+
+    await ctx.runMutation(internal.sessions.upgradeToAdminInternal, {
+      sid: args.sid,
+    });
 
     return { success: true };
   },
