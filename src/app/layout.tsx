@@ -7,7 +7,6 @@ import { NavigationProvider } from "@/context/navigation-context";
 import { PreferencesProvider } from "@/context/preferences-context";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { BuyCreditsModal } from "@/components/buy-credits-modal";
-import { OnboardingModal } from "@/components/onboarding-modal";
 import { ChatFAB } from "@/components/chat-fab";
 import { ChatPrompt } from "@/components/chat-prompt";
 
@@ -45,7 +44,6 @@ export default function RootLayout({
                 <ChatFAB />
                 <ChatPrompt />
                 <BuyCreditsModal />
-                <OnboardingModal />
               </NavigationProvider>
             </PreferencesProvider>
           </SessionProvider>

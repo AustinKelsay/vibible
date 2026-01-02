@@ -2,9 +2,9 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
-function resolveTier(currentTier: string, credits: number): "free" | "paid" | "admin" {
+function resolveTier(currentTier: string, credits: number): "paid" | "admin" {
   if (currentTier === "admin") return "admin";
-  return credits > 0 ? "paid" : "free";
+  return "paid"; // All non-admin users are "paid" tier
 }
 
 /**
@@ -73,7 +73,7 @@ export const createSession = mutation({
 
     await ctx.db.insert("sessions", {
       sid: args.sid,
-      tier: "free",
+      tier: "paid",
       credits: 0,
       createdAt: now,
       lastSeenAt: now,
@@ -82,7 +82,7 @@ export const createSession = mutation({
 
     return {
       sid: args.sid,
-      tier: "free",
+      tier: "paid",
       credits: 0,
     };
   },

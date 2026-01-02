@@ -1,19 +1,18 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { convertToModelMessages, streamText, UIMessage } from "ai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { streamText } from "ai";
 import { z } from "zod";
 import { DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
+import { getConvexClient } from "@/lib/convex-client";
+import { getSessionFromCookies } from "@/lib/session";
+import { api } from "../../../../convex/_generated/api";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 // OpenRouter client - the single provider for all chat
-const openRouter = createOpenAI({
+// Uses the official OpenRouter provider which handles message format conversion
+const openRouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  headers: {
-    "HTTP-Referer": process.env.OPENROUTER_REFERRER ?? "http://localhost:3000",
-    "X-Title": process.env.OPENROUTER_TITLE ?? "visibible",
-  },
 });
 
 // Verse context for prev/next verses
@@ -195,13 +194,127 @@ export async function POST(req: Request) {
   const modelId = requestedModel || DEFAULT_CHAT_MODEL;
   const startTime = Date.now();
 
+  // Session validation and credits check (only when Convex is enabled)
+  const convex = getConvexClient();
+
+  if (convex) {
+    const sid = await getSessionFromCookies();
+
+    if (!sid) {
+      return Response.json(
+        { error: "Session required for chat" },
+        { status: 401 }
+      );
+    }
+
+    // Get session to check tier and credits
+    const session = await convex.query(api.sessions.getSession, { sid });
+
+    if (!session) {
+      return Response.json(
+        { error: "Session not found" },
+        { status: 401 }
+      );
+    }
+
+    // Admin bypasses credit check
+    if (session.tier !== "admin") {
+      // All chat requires credits (1 credit per message)
+      if (session.credits < 1) {
+        return Response.json(
+          {
+            error: "Insufficient credits",
+            required: 1,
+            available: session.credits,
+          },
+          { status: 402 } // Payment Required
+        );
+      }
+
+      // Deduct 1 credit for chat
+      const deductResult = await convex.mutation(api.sessions.deductCredits, {
+        sid,
+        amount: 1,
+        modelId,
+        generationId: `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      });
+
+      if (!deductResult.success) {
+        return Response.json(
+          { error: deductResult.error || "Failed to deduct credits" },
+          { status: 402 }
+        );
+      }
+    }
+  }
+
   try {
     const system = buildSystemPrompt(context);
 
+    // Convert UIMessages to simple model messages for OpenRouter
+    // The AI SDK v6 parts format isn't always properly converted by convertToModelMessages
+    const modelMessagesWithMetadata = messages.map((msg, index) => {
+      const text = msg.parts
+        .filter(
+          (p): p is { type: string; text: string } =>
+            p.type === "text" && typeof p.text === "string"
+        )
+        .map((p) => p.text)
+        .join("");
+
+      return {
+        role: msg.role as "user" | "assistant" | "system",
+        content: text,
+        originalIndex: index,
+        originalId: msg.id,
+      };
+    });
+
+    // Filter out messages with empty content, preserving order
+    const filteredMessages: typeof modelMessagesWithMetadata = [];
+    const droppedMessages: Array<{ index: number; role: string; id: string }> = [];
+
+    for (const msg of modelMessagesWithMetadata) {
+      if (msg.content.trim().length > 0) {
+        filteredMessages.push(msg);
+      } else {
+        droppedMessages.push({
+          index: msg.originalIndex,
+          role: msg.role,
+          id: msg.originalId,
+        });
+      }
+    }
+
+    // Log dropped messages for debugging
+    if (droppedMessages.length > 0) {
+      console.warn(
+        `[Chat API] Filtered out ${droppedMessages.length} message(s) with empty content:`,
+        droppedMessages.map((m) => `[${m.index}] ${m.role} (id: ${m.id})`).join(", ")
+      );
+    }
+
+    // Ensure at least one non-empty message remains
+    if (filteredMessages.length === 0) {
+      return Response.json(
+        {
+          error: "Invalid request",
+          message: "All messages have empty content. At least one message with non-empty content is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Extract clean messages for OpenRouter (remove metadata)
+    const modelMessages = filteredMessages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+
     const result = streamText({
-      model: openRouter(modelId),
+      model: openRouter.chat(modelId),
       system,
-      messages: await convertToModelMessages(messages as UIMessage[]),
+      messages: modelMessages,
     });
 
     // Stream response with metadata injection
@@ -226,8 +339,78 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("Chat API error:", error);
+
+    // Extract error details for user-friendly messages
+    const errorObj = error as {
+      statusCode?: number;
+      responseBody?: string;
+      lastError?: { statusCode?: number; responseBody?: string };
+      reason?: string;
+    };
+
+    // Check for retry errors (AI_RetryError wraps the last error)
+    const statusCode = errorObj.statusCode ?? errorObj.lastError?.statusCode;
+    const responseBody = errorObj.responseBody ?? errorObj.lastError?.responseBody ?? "";
+
+    // Parse response body for detailed error info
+    let errorMessage = "";
+    try {
+      const parsed = JSON.parse(responseBody);
+      errorMessage = parsed?.error?.message ?? "";
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Handle rate limit errors (429)
+    if (statusCode === 429 || errorMessage.includes("rate-limited")) {
+      return Response.json(
+        {
+          error: "Rate limit reached",
+          message:
+            "We're experiencing high demand right now. Please wait a moment and try again. Free models have limited availability.",
+          retryable: true,
+        },
+        { status: 429 }
+      );
+    }
+
+    // Handle data policy / no endpoints errors (404)
+    if (
+      statusCode === 404 ||
+      errorMessage.includes("No endpoints found") ||
+      errorMessage.includes("data policy")
+    ) {
+      return Response.json(
+        {
+          error: "Model temporarily unavailable",
+          message:
+            "This model is temporarily unavailable. Please try a different model or wait a few minutes.",
+          retryable: true,
+        },
+        { status: 503 }
+      );
+    }
+
+    // Handle max retries exceeded
+    if (errorObj.reason === "maxRetriesExceeded") {
+      return Response.json(
+        {
+          error: "Service temporarily busy",
+          message:
+            "The AI service is experiencing high traffic. Please try again in a moment.",
+          retryable: true,
+        },
+        { status: 503 }
+      );
+    }
+
+    // Generic fallback
     return Response.json(
-      { error: "Failed to process chat request" },
+      {
+        error: "Failed to process chat request",
+        message: "Something went wrong. Please try again.",
+        retryable: true,
+      },
       { status: 500 }
     );
   }

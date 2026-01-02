@@ -67,7 +67,7 @@ export default defineSchema({
   // Anonymous sessions with credit balances
   sessions: defineTable({
     sid: v.string(),
-    tier: v.string(), // "free" | "paid" | "admin"
+    tier: v.string(), // "paid" | "admin"
     credits: v.number(),
     createdAt: v.number(),
     lastSeenAt: v.number(),

@@ -12,7 +12,7 @@ import { DEFAULT_CREDITS_COST } from "@/lib/image-models";
 
 interface SessionContextType {
   sid: string | null;
-  tier: "free" | "paid" | "admin";
+  tier: "paid" | "admin";
   credits: number;
   isLoading: boolean;
   error: string | null;
@@ -21,28 +21,23 @@ interface SessionContextType {
   buyCredits: () => void;
   isBuyModalOpen: boolean;
   closeBuyModal: () => void;
-  isOnboardingOpen: boolean;
-  openOnboarding: () => void;
-  closeOnboarding: () => void;
 }
 
 const SessionContext = createContext<SessionContextType | null>(null);
 
 interface SessionResponse {
   sid: string | null;
-  tier: "free" | "paid" | "admin";
+  tier: "paid" | "admin";
   credits: number;
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sid, setSid] = useState<string | null>(null);
-  const [tier, setTier] = useState<"free" | "paid" | "admin">("free");
+  const [tier, setTier] = useState<"paid" | "admin">("paid");
   const [credits, setCredits] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
-  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(false);
 
   const fetchSession = useCallback(async () => {
     try {
@@ -101,40 +96,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setIsBuyModalOpen(false);
   }, []);
 
-  const openOnboarding = useCallback(() => {
-    setIsOnboardingOpen(true);
-  }, []);
-
-  const closeOnboarding = useCallback(() => {
-    setIsOnboardingOpen(false);
-    // Mark as seen in localStorage
-    if (typeof window !== "undefined") {
-      localStorage.setItem("visibible_onboarding_seen", "true");
-    }
-    setHasSeenOnboarding(true);
-  }, []);
-
-  // Check localStorage for onboarding status on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const seen = localStorage.getItem("visibible_onboarding_seen");
-      setHasSeenOnboarding(seen === "true");
-    }
-  }, []);
-
-  // Show onboarding for new free users who haven't seen it
-  useEffect(() => {
-    if (
-      !isLoading &&
-      !hasSeenOnboarding &&
-      tier === "free" &&
-      credits === 0 &&
-      sid
-    ) {
-      setIsOnboardingOpen(true);
-    }
-  }, [isLoading, hasSeenOnboarding, tier, credits, sid]);
-
   return (
     <SessionContext.Provider
       value={{
@@ -148,9 +109,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         buyCredits,
         isBuyModalOpen,
         closeBuyModal,
-        isOnboardingOpen,
-        openOnboarding,
-        closeOnboarding,
       }}
     >
       {children}
