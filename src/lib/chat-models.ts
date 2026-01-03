@@ -7,9 +7,35 @@ export interface ChatModel {
     prompt?: string;
     completion?: string;
   };
+  isFree: boolean;
 }
 
-export const DEFAULT_CHAT_MODEL = "openai/gpt-oss-120b";
+/**
+ * Determine if a model is free based on:
+ * 1. Model ID ends with ":free" suffix
+ * 2. Both prompt and completion pricing are "0"
+ */
+export function isModelFree(model: {
+  id: string;
+  pricing?: { prompt?: string; completion?: string };
+}): boolean {
+  // Check for :free suffix in model ID
+  if (model.id.endsWith(":free")) {
+    return true;
+  }
+
+  // Check if both prices are "0" (string zero from OpenRouter)
+  const promptPrice = model.pricing?.prompt;
+  const completionPrice = model.pricing?.completion;
+
+  if (promptPrice && completionPrice) {
+    return promptPrice === "0" && completionPrice === "0";
+  }
+
+  return false;
+}
+
+export const DEFAULT_CHAT_MODEL = "openai/gpt-oss-120b:free";
 
 interface OpenRouterModel {
   id: string;
@@ -37,6 +63,7 @@ function getDefaultChatModels(): ChatModel[] {
       name: "GPT-OSS 120B (Default)",
       provider: "Openai",
       contextLength: 131072,
+      isFree: true, // gpt-oss-120b is a free model on OpenRouter
     },
   ];
 }
@@ -79,6 +106,10 @@ export async function fetchChatModels(openRouterApiKey: string): Promise<ChatMod
           prompt: model.pricing?.prompt,
           completion: model.pricing?.completion,
         },
+        isFree: isModelFree({
+          id: model.id,
+          pricing: model.pricing,
+        }),
       }))
       .sort((a: ChatModel, b: ChatModel) => {
         const providerCompare = a.provider.localeCompare(b.provider);

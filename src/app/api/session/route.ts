@@ -12,7 +12,7 @@ import {
 
 interface SessionResponse {
   sid: string | null;
-  tier: "free" | "paid" | "admin";
+  tier: "paid" | "admin";
   credits: number;
 }
 
@@ -20,14 +20,14 @@ interface SessionResponse {
  * GET /api/session
  * Returns the current session state.
  * If a valid session exists, updates lastSeenAt and returns session info.
- * If no session, returns null sid with free tier and 0 credits.
+ * If no session, returns null sid with paid tier and 0 credits.
  */
 export async function GET(): Promise<NextResponse<SessionResponse>> {
   const convex = getConvexClient();
   if (!convex) {
     return NextResponse.json({
       sid: null,
-      tier: "free",
+      tier: "paid",
       credits: 0,
     });
   }
@@ -37,7 +37,7 @@ export async function GET(): Promise<NextResponse<SessionResponse>> {
   if (!sid) {
     return NextResponse.json({
       sid: null,
-      tier: "free",
+      tier: "paid",
       credits: 0,
     });
   }
@@ -48,7 +48,7 @@ export async function GET(): Promise<NextResponse<SessionResponse>> {
   if (!session) {
     return NextResponse.json({
       sid: null,
-      tier: "free",
+      tier: "paid",
       credits: 0,
     });
   }
@@ -60,7 +60,7 @@ export async function GET(): Promise<NextResponse<SessionResponse>> {
 
   return NextResponse.json({
     sid: session.sid,
-    tier: session.tier as "free" | "paid" | "admin",
+    tier: session.tier as "paid" | "admin",
     credits: session.credits,
   });
 }
@@ -74,7 +74,7 @@ export async function POST(): Promise<NextResponse<SessionResponse>> {
   const convex = getConvexClient();
   if (!convex) {
     return NextResponse.json(
-      { sid: null, tier: "free" as const, credits: 0 },
+      { sid: null, tier: "paid" as const, credits: 0 },
       { status: 503 }
     );
   }
@@ -88,7 +88,7 @@ export async function POST(): Promise<NextResponse<SessionResponse>> {
     if (existingSession) {
       return NextResponse.json({
         sid: existingSession.sid,
-        tier: existingSession.tier as "free" | "paid" | "admin",
+        tier: existingSession.tier as "paid" | "admin",
         credits: existingSession.credits,
       });
     }
@@ -117,7 +117,7 @@ export async function POST(): Promise<NextResponse<SessionResponse>> {
   // Build response with Set-Cookie header
   const response = NextResponse.json({
     sid: session.sid,
-    tier: session.tier as "free" | "paid" | "admin",
+    tier: session.tier as "paid" | "admin",
     credits: session.credits,
   });
 

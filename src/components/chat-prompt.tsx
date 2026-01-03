@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigation } from "@/context/navigation-context";
 
 /**
@@ -13,12 +13,30 @@ export function ChatPrompt() {
   const { isChatOpen, chatContext, openChat } = useNavigation();
   const [isVisible, setIsVisible] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const contextKeyRef = useRef<string>("");
+
+  // Reset dismissed state when context changes (new verse)
+  useEffect(() => {
+    const currentContextKey = `${chatContext?.book}-${chatContext?.chapter}-${chatContext?.verseRange}`;
+    if (currentContextKey !== contextKeyRef.current) {
+      contextKeyRef.current = currentContextKey;
+      if (isDismissed) {
+        // Use setTimeout to avoid synchronous setState in effect
+        setTimeout(() => {
+          setIsDismissed(false);
+        }, 0);
+      }
+    }
+  }, [chatContext?.book, chatContext?.chapter, chatContext?.verseRange, isDismissed]);
 
   // Don't show if chat is open or if dismissed
   useEffect(() => {
     if (isChatOpen || isDismissed || !chatContext) {
-      setIsVisible(false);
-      return;
+      // Use setTimeout to avoid synchronous setState in effect
+      const timer = setTimeout(() => {
+        setIsVisible(false);
+      }, 0);
+      return () => clearTimeout(timer);
     }
 
     // Show prompt after a brief delay (500ms) for better UX
@@ -37,11 +55,6 @@ export function ChatPrompt() {
       clearTimeout(dismissTimer);
     };
   }, [isChatOpen, isDismissed, chatContext]);
-
-  // Reset dismissed state when context changes (new verse)
-  useEffect(() => {
-    setIsDismissed(false);
-  }, [chatContext?.book, chatContext?.chapter, chatContext?.verseRange]);
 
   // Don't render if no context or chat is open
   if (!chatContext || isChatOpen || isDismissed) return null;

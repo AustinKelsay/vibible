@@ -331,7 +331,6 @@ function HeroImageBase({
   const pricingPending = isConvexEnabled && !isAdmin && !pricingLoaded;
   const canGenerate = !isConvexEnabled || isAdmin || (pricingLoaded && tier === "paid" && credits >= effectiveCost);
   const showCreditsCost = isConvexEnabled && !isAdmin && pricingLoaded;
-  const hasExistingImages = (imageHistory?.length || 0) > 0;
 
   // Create verse ID for Convex query
   const verseId = currentReference ? createVerseId(currentReference) : null;

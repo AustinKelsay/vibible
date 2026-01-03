@@ -7,9 +7,6 @@ import {
   extractOutput,
   toStringOutput,
   type FunctionOutput,
-  type ResponseInputText,
-  type ResponseInputImage,
-  type ResponseInputFile,
 } from "./openai-output";
 
 describe("extractOutput", () => {
@@ -167,13 +164,13 @@ describe("extractOutput", () => {
   });
 
   it("should skip invalid array items", () => {
-    const output: FunctionOutput = [
+    const output = [
       { type: "text", text: "Valid" },
       null,
       undefined,
       "invalid string",
       { type: "unknown" },
-    ] as any;
+    ] as unknown as FunctionOutput;
     const result = extractOutput(output);
     expect(result).toEqual({
       text: ["Valid"],
@@ -249,11 +246,11 @@ describe("toStringOutput", () => {
   });
 
   it("should skip invalid items in array", () => {
-    const output: FunctionOutput = [
+    const output = [
       { type: "text", text: "Valid" },
       null,
       { type: "unknown" },
-    ] as any;
+    ] as unknown as FunctionOutput;
     expect(toStringOutput(output)).toBe("Valid");
   });
 });

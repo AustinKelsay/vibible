@@ -1,19 +1,18 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { convertToModelMessages, streamText, UIMessage } from "ai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { streamText } from "ai";
 import { z } from "zod";
 import { DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
+import { getConvexClient } from "@/lib/convex-client";
+import { getSessionFromCookies } from "@/lib/session";
+import { api } from "../../../../convex/_generated/api";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 // OpenRouter client - the single provider for all chat
-const openRouter = createOpenAI({
+// Uses the official OpenRouter provider which handles message format conversion
+const openRouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  headers: {
-    "HTTP-Referer": process.env.OPENROUTER_REFERRER ?? "http://localhost:3000",
-    "X-Title": process.env.OPENROUTER_TITLE ?? "visibible",
-  },
 });
 
 // Verse context for prev/next verses
@@ -195,17 +194,194 @@ export async function POST(req: Request) {
   const modelId = requestedModel || DEFAULT_CHAT_MODEL;
   const startTime = Date.now();
 
+  // Session validation and credit reservation (only when Convex is enabled)
+  const convex = getConvexClient();
+  let sessionId: string | null = null;
+  let generationId: string | null = null;
+  let creditReserved = false;
+
+  // Best-effort cleanup for reserved credits to avoid permanently locking balances.
+  // Safe to call multiple times because releaseReservation is idempotent.
+  const releaseReservedCredits = async (reason: string) => {
+    if (!convex || !sessionId || !generationId || !creditReserved) return;
+    try {
+      await convex.mutation(api.sessions.releaseReservation, {
+        sid: sessionId,
+        generationId,
+      });
+      console.log(`[Chat API] Released credit reservation (${reason})`);
+    } catch (refundErr) {
+      console.error(
+        `[Chat API] Failed to release credit reservation (${reason}):`,
+        refundErr
+      );
+    }
+  };
+
+  let creditSettlement: Promise<void> | null = null;
+  const settleCredits = (mode: "deduct" | "release", reason: string) => {
+    if (!convex || !sessionId || !generationId || !creditReserved) {
+      return Promise.resolve();
+    }
+    if (creditSettlement) return creditSettlement;
+    creditSettlement = (async () => {
+      if (mode === "release") {
+        await releaseReservedCredits(reason);
+        return;
+      }
+
+      try {
+        const deductResult = await convex.mutation(api.sessions.deductCredits, {
+          sid: sessionId,
+          amount: 1,
+          modelId,
+          generationId,
+        });
+
+        if (!deductResult.success) {
+          console.warn(
+            "[Chat API] Reservation conversion failed, releasing credit:",
+            deductResult
+          );
+          await releaseReservedCredits("deduct-failed");
+        }
+      } catch (err) {
+        console.error("[Chat API] Failed to convert reservation:", err);
+        await releaseReservedCredits("deduct-error");
+      }
+    })();
+    return creditSettlement;
+  };
+
+  if (convex) {
+    const sid = await getSessionFromCookies();
+    sessionId = sid;
+
+    if (!sid) {
+      return Response.json(
+        { error: "Session required for chat" },
+        { status: 401 }
+      );
+    }
+
+    // Get session to check tier and credits
+    const session = await convex.query(api.sessions.getSession, { sid });
+
+    if (!session) {
+      return Response.json(
+        { error: "Session not found" },
+        { status: 401 }
+      );
+    }
+
+    // Admin bypasses credit check
+    if (session.tier !== "admin") {
+      // All chat requires credits (1 credit per message)
+      if (session.credits < 1) {
+        return Response.json(
+          {
+            error: "Insufficient credits",
+            required: 1,
+            available: session.credits,
+          },
+          { status: 402 } // Payment Required
+        );
+      }
+
+      // Generate unique ID for this chat request
+      generationId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Reserve 1 credit for chat (will be converted to deduction on success, refunded on failure)
+      const reserveResult = await convex.mutation(api.sessions.reserveCredits, {
+        sid,
+        amount: 1,
+        modelId,
+        generationId,
+      });
+
+      if (!reserveResult.success) {
+        return Response.json(
+          { error: reserveResult.error || "Failed to reserve credits" },
+          { status: 402 }
+        );
+      }
+
+      creditReserved = true;
+    }
+  }
+
   try {
     const system = buildSystemPrompt(context);
 
-    const result = streamText({
-      model: openRouter(modelId),
-      system,
-      messages: await convertToModelMessages(messages as UIMessage[]),
+    // Convert UIMessages to simple model messages for OpenRouter
+    // The AI SDK v6 parts format isn't always properly converted by convertToModelMessages
+    const modelMessagesWithMetadata = messages.map((msg, index) => {
+      const text = msg.parts
+        .filter(
+          (p): p is { type: string; text: string } =>
+            p.type === "text" && typeof p.text === "string"
+        )
+        .map((p) => p.text)
+        .join("");
+
+      return {
+        role: msg.role as "user" | "assistant" | "system",
+        content: text,
+        originalIndex: index,
+        originalId: msg.id,
+      };
     });
 
-    // Stream response with metadata injection
-    return result.toUIMessageStreamResponse({
+    // Filter out messages with empty content, preserving order
+    const filteredMessages: typeof modelMessagesWithMetadata = [];
+    const droppedMessages: Array<{ index: number; role: string; id: string }> = [];
+
+    for (const msg of modelMessagesWithMetadata) {
+      if (msg.content.trim().length > 0) {
+        filteredMessages.push(msg);
+      } else {
+        droppedMessages.push({
+          index: msg.originalIndex,
+          role: msg.role,
+          id: msg.originalId,
+        });
+      }
+    }
+
+    // Log dropped messages for debugging
+    if (droppedMessages.length > 0) {
+      console.warn(
+        `[Chat API] Filtered out ${droppedMessages.length} message(s) with empty content:`,
+        droppedMessages.map((m) => `[${m.index}] ${m.role} (id: ${m.id})`).join(", ")
+      );
+    }
+
+    // Ensure at least one non-empty message remains
+    if (filteredMessages.length === 0) {
+      await releaseReservedCredits("empty-messages");
+      return Response.json(
+        {
+          error: "Invalid request",
+          message: "All messages have empty content. At least one message with non-empty content is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Extract clean messages for OpenRouter (remove metadata)
+    const modelMessages = filteredMessages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+
+    const result = streamText({
+      model: openRouter.chat(modelId),
+      system,
+      messages: modelMessages,
+    });
+
+    // Get the base streaming response with metadata injection
+    const baseResponse = result.toUIMessageStreamResponse({
       messageMetadata: ({ part }) => {
         // Inject metadata on finish to capture usage stats
         if (part.type === "finish") {
@@ -224,10 +400,150 @@ export async function POST(req: Request) {
         return undefined;
       },
     });
+
+    // If no credits reserved, return response as-is
+    if (!convex || !sessionId || !generationId || !creditReserved) {
+      return baseResponse;
+    }
+
+    // Wrap stream with TransformStream to ensure credit deduction is awaited
+    // before the stream closes. The flush() method blocks stream completion
+    // until our async work finishes.
+    const body = baseResponse.body;
+    if (!body) {
+      return baseResponse;
+    }
+
+    const creditDeductionStream = new TransformStream({
+      transform(chunk, controller) {
+        // Propagate chunks; errors here will trigger the pump's catch block
+        controller.enqueue(chunk);
+      },
+      async flush() {
+        // This runs when input stream ends and is awaited before output closes
+        await settleCredits("deduct", "stream-finish");
+      },
+    });
+
+    const streamedBody = body.pipeThrough(creditDeductionStream);
+    const cancelAwareBody = new ReadableStream({
+      async start(controller) {
+        const reader = streamedBody.getReader();
+
+        // Pump loop with error handling to ensure credits are released on mid-stream errors
+        const pump = async (): Promise<void> => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                controller.close();
+                return;
+              }
+              controller.enqueue(value);
+            }
+          } catch (err) {
+            // Mid-stream error: release the reserved credit
+            console.error("[Chat API] Stream error during pump:", err);
+            await settleCredits("release", "stream-error");
+            controller.error(err);
+          }
+        };
+
+        // Start pumping (don't await - let the stream flow)
+        pump();
+      },
+      async cancel(reason) {
+        try {
+          await streamedBody.cancel(reason);
+        } catch {
+          // Ignore cancellation errors.
+        }
+        await settleCredits("release", "stream-cancel");
+      },
+    });
+
+    return new Response(cancelAwareBody, {
+      status: baseResponse.status,
+      statusText: baseResponse.statusText,
+      headers: baseResponse.headers,
+    });
   } catch (error) {
     console.error("Chat API error:", error);
+
+    // Release reserved credit on failure (refund)
+    await releaseReservedCredits("chat-error");
+
+    // Extract error details for user-friendly messages
+    const errorObj = error as {
+      statusCode?: number;
+      responseBody?: string;
+      lastError?: { statusCode?: number; responseBody?: string };
+      reason?: string;
+    };
+
+    // Check for retry errors (AI_RetryError wraps the last error)
+    const statusCode = errorObj.statusCode ?? errorObj.lastError?.statusCode;
+    const responseBody = errorObj.responseBody ?? errorObj.lastError?.responseBody ?? "";
+
+    // Parse response body for detailed error info
+    let errorMessage = "";
+    try {
+      const parsed = JSON.parse(responseBody);
+      errorMessage = parsed?.error?.message ?? "";
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Handle rate limit errors (429)
+    if (statusCode === 429 || errorMessage.includes("rate-limited")) {
+      return Response.json(
+        {
+          error: "Rate limit reached",
+          message:
+            "We're experiencing high demand right now. Please wait a moment and try again. Free models have limited availability.",
+          retryable: true,
+        },
+        { status: 429 }
+      );
+    }
+
+    // Handle data policy / no endpoints errors (404)
+    if (
+      statusCode === 404 ||
+      errorMessage.includes("No endpoints found") ||
+      errorMessage.includes("data policy")
+    ) {
+      return Response.json(
+        {
+          error: "Model temporarily unavailable",
+          message:
+            "This model is temporarily unavailable. Please try a different model or wait a few minutes.",
+          retryable: true,
+        },
+        { status: 503 }
+      );
+    }
+
+    // Handle max retries exceeded
+    if (errorObj.reason === "maxRetriesExceeded") {
+      return Response.json(
+        {
+          error: "Service temporarily busy",
+          message:
+            "The AI service is experiencing high traffic. Please try again in a moment.",
+          retryable: true,
+        },
+        { status: 503 }
+      );
+    }
+
+    // Generic fallback
     return Response.json(
-      { error: "Failed to process chat request" },
+      {
+        error: "Failed to process chat request",
+        message: "Something went wrong. Please try again.",
+        retryable: true,
+      },
       { status: 500 }
     );
   }

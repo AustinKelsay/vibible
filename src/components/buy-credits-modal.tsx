@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { X, Loader2, Check, Copy, Zap } from "lucide-react";
+import { X, Loader2, Check, Copy, Zap, ChevronDown, Shield } from "lucide-react";
+import Image from "next/image";
 import QRCode from "qrcode";
 import { useSession } from "@/context/session-context";
 
@@ -82,6 +83,12 @@ export function BuyCreditsModal() {
   const [timeLeftMs, setTimeLeftMs] = useState(0);
   const prevModalOpenRef = useRef(false);
 
+  // Admin login state
+  const [showAdminInput, setShowAdminInput] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
+
   /**
    * Creates a new Lightning invoice for purchasing credits.
    * Memoized with useCallback to ensure stable reference for useEffect dependencies.
@@ -139,12 +146,53 @@ export function BuyCreditsModal() {
     }
   }, [isBuyModalOpen, invoice]);
 
-  // Reset only copied state when modal closes (preserve invoice for persistence)
+  // Reset state when modal closes (preserve invoice for persistence)
   useEffect(() => {
     if (!isBuyModalOpen) {
       setCopied(false);
+      setShowAdminInput(false);
+      setAdminPassword("");
+      setAdminError(null);
     }
   }, [isBuyModalOpen]);
+
+  const handleAdminLogin = async () => {
+    if (!adminPassword.trim()) {
+      setAdminError("Please enter a password");
+      return;
+    }
+
+    setAdminSubmitting(true);
+    setAdminError(null);
+
+    try {
+      const response = await fetch("/api/admin-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        setAdminError(data.error || "Invalid password");
+        return;
+      }
+
+      // Success - refetch session and close
+      await refetch();
+      closeBuyModal();
+    } catch {
+      setAdminError("Failed to authenticate");
+    } finally {
+      setAdminSubmitting(false);
+    }
+  };
+
+  const handleAdminKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !adminSubmitting) {
+      handleAdminLogin();
+    }
+  };
 
   // Generate QR code when invoice is created
   useEffect(() => {
@@ -329,6 +377,49 @@ export function BuyCreditsModal() {
             >
               Buy 300 Credits
             </button>
+
+            {/* Admin Access */}
+            <div className="pt-4 border-t border-[var(--divider)]">
+              <button
+                onClick={() => setShowAdminInput(!showAdminInput)}
+                className="flex items-center justify-center gap-2 w-full py-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+              >
+                <Shield size={14} />
+                <span>Admin Access</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform ${showAdminInput ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {showAdminInput && (
+                <div className="mt-3 space-y-3">
+                  <input
+                    type="password"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    onKeyDown={handleAdminKeyDown}
+                    placeholder="Enter admin password"
+                    className="w-full px-4 py-3 bg-[var(--surface)] border border-[var(--divider)] rounded-[var(--radius-md)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    disabled={adminSubmitting}
+                  />
+                  {adminError && (
+                    <p className="text-sm text-[var(--error)]">{adminError}</p>
+                  )}
+                  <button
+                    onClick={handleAdminLogin}
+                    disabled={adminSubmitting}
+                    className="w-full py-2 bg-[var(--surface)] text-[var(--foreground)] rounded-[var(--radius-md)] font-medium hover:bg-[var(--divider)] transition-colors disabled:opacity-50"
+                  >
+                    {adminSubmitting ? (
+                      <Loader2 size={18} className="animate-spin mx-auto" />
+                    ) : (
+                      "Login as Admin"
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -371,9 +462,11 @@ export function BuyCreditsModal() {
             {/* QR Code */}
             <div className="flex justify-center">
               {qrDataUrl ? (
-                <img
+                <Image
                   src={qrDataUrl}
                   alt="Lightning Invoice QR Code"
+                  width={192}
+                  height={192}
                   className="w-48 h-48 rounded-[var(--radius-md)]"
                 />
               ) : (

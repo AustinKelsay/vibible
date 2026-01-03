@@ -36,23 +36,33 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const prefs = JSON.parse(stored);
-        // Validate that the stored translation is a valid key in TRANSLATIONS
-        if (prefs.translation && Object.prototype.hasOwnProperty.call(TRANSLATIONS, prefs.translation)) {
-          setTranslationState(prefs.translation as Translation);
-        }
-        // Load image model preference
-        if (prefs.imageModel) {
-          setImageModelState(prefs.imageModel);
-        }
-        // Load chat model preference
-        if (prefs.chatModel) {
-          setChatModelState(prefs.chatModel);
-        }
+        // Use setTimeout to avoid synchronous setState in effect
+        setTimeout(() => {
+          // Validate that the stored translation is a valid key in TRANSLATIONS
+          if (prefs.translation && Object.prototype.hasOwnProperty.call(TRANSLATIONS, prefs.translation)) {
+            setTranslationState(prefs.translation as Translation);
+          }
+          // Load image model preference
+          if (prefs.imageModel) {
+            setImageModelState(prefs.imageModel);
+          }
+          // Load chat model preference
+          if (prefs.chatModel) {
+            setChatModelState(prefs.chatModel);
+          }
+          setIsHydrated(true);
+        }, 0);
+      } else {
+        setTimeout(() => {
+          setIsHydrated(true);
+        }, 0);
       }
     } catch {
       // Ignore localStorage errors
+      setTimeout(() => {
+        setIsHydrated(true);
+      }, 0);
     }
-    setIsHydrated(true);
   }, []);
 
   // Helper to save all preferences

@@ -2,9 +2,9 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
-function resolveTier(currentTier: string, credits: number): "free" | "paid" | "admin" {
+function resolveTier(currentTier: string): "paid" | "admin" {
   if (currentTier === "admin") return "admin";
-  return credits > 0 ? "paid" : "free";
+  return "paid"; // All non-admin users are "paid" tier
 }
 
 /**
@@ -73,7 +73,7 @@ export const createSession = mutation({
 
     await ctx.db.insert("sessions", {
       sid: args.sid,
-      tier: "free",
+      tier: "paid",
       credits: 0,
       createdAt: now,
       lastSeenAt: now,
@@ -82,7 +82,7 @@ export const createSession = mutation({
 
     return {
       sid: args.sid,
-      tier: "free",
+      tier: "paid",
       credits: 0,
     };
   },
@@ -139,7 +139,7 @@ export const addCredits = mutation({
 
     const newCredits = session.credits + args.amount;
 
-    const nextTier = resolveTier(session.tier, newCredits);
+    const nextTier = resolveTier(session.tier);
 
     // Update session
     await ctx.db.patch(session._id, {
@@ -227,7 +227,7 @@ export const reserveCredits = mutation({
     // Atomically reserve credits by deducting from balance
     const newCredits = session.credits - args.amount;
 
-    const nextTier = resolveTier(session.tier, newCredits);
+    const nextTier = resolveTier(session.tier);
 
     // Update session
     await ctx.db.patch(session._id, {
@@ -298,7 +298,7 @@ export const releaseReservation = mutation({
     // Restore credits
     const newCredits = session.credits + reservedAmount;
 
-    const nextTier = resolveTier(session.tier, newCredits);
+    const nextTier = resolveTier(session.tier);
 
     // Update session
     await ctx.db.patch(session._id, {
@@ -373,11 +373,6 @@ export const deductCredits = mutation({
 
       // If reservation exists but not yet converted to generation, convert it
       if (hasReservation && !hasGeneration) {
-        // Find the reservation entry to get its metadata
-        const reservationEntry = ledgerEntries.find(
-          (e) => e.reason === "reservation"
-        );
-
         // Record generation entry (credits already deducted, so delta is 0 net change)
         await ctx.db.insert("creditLedger", {
           sid: args.sid,
@@ -424,7 +419,7 @@ export const deductCredits = mutation({
 
     const newCredits = session.credits - args.amount;
 
-    const nextTier = resolveTier(session.tier, newCredits);
+    const nextTier = resolveTier(session.tier);
 
     // Update session
     await ctx.db.patch(session._id, {

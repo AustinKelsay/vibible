@@ -36,7 +36,7 @@ export async function GET() {
   const result = await fetchImageModels(openRouterApiKey);
 
   // Try to fetch model stats from Convex to get real ETAs
-  let modelStatsMap: Map<string, number> = new Map();
+  const modelStatsMap: Map<string, number> = new Map();
   const convex = getConvexClient();
 
   if (convex) {
