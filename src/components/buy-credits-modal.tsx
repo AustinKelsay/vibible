@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { X, Loader2, Check, Copy, Zap, ChevronDown, Shield } from "lucide-react";
+import Image from "next/image";
 import QRCode from "qrcode";
 import { useSession } from "@/context/session-context";
 
@@ -461,9 +462,11 @@ export function BuyCreditsModal() {
             {/* QR Code */}
             <div className="flex justify-center">
               {qrDataUrl ? (
-                <img
+                <Image
                   src={qrDataUrl}
                   alt="Lightning Invoice QR Code"
+                  width={192}
+                  height={192}
                   className="w-48 h-48 rounded-[var(--radius-md)]"
                 />
               ) : (

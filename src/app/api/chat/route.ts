@@ -194,11 +194,68 @@ export async function POST(req: Request) {
   const modelId = requestedModel || DEFAULT_CHAT_MODEL;
   const startTime = Date.now();
 
-  // Session validation and credits check (only when Convex is enabled)
+  // Session validation and credit reservation (only when Convex is enabled)
   const convex = getConvexClient();
+  let sessionId: string | null = null;
+  let generationId: string | null = null;
+  let creditReserved = false;
+
+  // Best-effort cleanup for reserved credits to avoid permanently locking balances.
+  // Safe to call multiple times because releaseReservation is idempotent.
+  const releaseReservedCredits = async (reason: string) => {
+    if (!convex || !sessionId || !generationId || !creditReserved) return;
+    try {
+      await convex.mutation(api.sessions.releaseReservation, {
+        sid: sessionId,
+        generationId,
+      });
+      console.log(`[Chat API] Released credit reservation (${reason})`);
+    } catch (refundErr) {
+      console.error(
+        `[Chat API] Failed to release credit reservation (${reason}):`,
+        refundErr
+      );
+    }
+  };
+
+  let creditSettlement: Promise<void> | null = null;
+  const settleCredits = (mode: "deduct" | "release", reason: string) => {
+    if (!convex || !sessionId || !generationId || !creditReserved) {
+      return Promise.resolve();
+    }
+    if (creditSettlement) return creditSettlement;
+    creditSettlement = (async () => {
+      if (mode === "release") {
+        await releaseReservedCredits(reason);
+        return;
+      }
+
+      try {
+        const deductResult = await convex.mutation(api.sessions.deductCredits, {
+          sid: sessionId,
+          amount: 1,
+          modelId,
+          generationId,
+        });
+
+        if (!deductResult.success) {
+          console.warn(
+            "[Chat API] Reservation conversion failed, releasing credit:",
+            deductResult
+          );
+          await releaseReservedCredits("deduct-failed");
+        }
+      } catch (err) {
+        console.error("[Chat API] Failed to convert reservation:", err);
+        await releaseReservedCredits("deduct-error");
+      }
+    })();
+    return creditSettlement;
+  };
 
   if (convex) {
     const sid = await getSessionFromCookies();
+    sessionId = sid;
 
     if (!sid) {
       return Response.json(
@@ -231,20 +288,25 @@ export async function POST(req: Request) {
         );
       }
 
-      // Deduct 1 credit for chat
-      const deductResult = await convex.mutation(api.sessions.deductCredits, {
+      // Generate unique ID for this chat request
+      generationId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Reserve 1 credit for chat (will be converted to deduction on success, refunded on failure)
+      const reserveResult = await convex.mutation(api.sessions.reserveCredits, {
         sid,
         amount: 1,
         modelId,
-        generationId: `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        generationId,
       });
 
-      if (!deductResult.success) {
+      if (!reserveResult.success) {
         return Response.json(
-          { error: deductResult.error || "Failed to deduct credits" },
+          { error: reserveResult.error || "Failed to reserve credits" },
           { status: 402 }
         );
       }
+
+      creditReserved = true;
     }
   }
 
@@ -296,6 +358,7 @@ export async function POST(req: Request) {
 
     // Ensure at least one non-empty message remains
     if (filteredMessages.length === 0) {
+      await releaseReservedCredits("empty-messages");
       return Response.json(
         {
           error: "Invalid request",
@@ -317,8 +380,8 @@ export async function POST(req: Request) {
       messages: modelMessages,
     });
 
-    // Stream response with metadata injection
-    return result.toUIMessageStreamResponse({
+    // Get the base streaming response with metadata injection
+    const baseResponse = result.toUIMessageStreamResponse({
       messageMetadata: ({ part }) => {
         // Inject metadata on finish to capture usage stats
         if (part.type === "finish") {
@@ -337,8 +400,78 @@ export async function POST(req: Request) {
         return undefined;
       },
     });
+
+    // If no credits reserved, return response as-is
+    if (!convex || !sessionId || !generationId || !creditReserved) {
+      return baseResponse;
+    }
+
+    // Wrap stream with TransformStream to ensure credit deduction is awaited
+    // before the stream closes. The flush() method blocks stream completion
+    // until our async work finishes.
+    const body = baseResponse.body;
+    if (!body) {
+      return baseResponse;
+    }
+
+    const creditDeductionStream = new TransformStream({
+      transform(chunk, controller) {
+        // Propagate chunks; errors here will trigger the pump's catch block
+        controller.enqueue(chunk);
+      },
+      async flush() {
+        // This runs when input stream ends and is awaited before output closes
+        await settleCredits("deduct", "stream-finish");
+      },
+    });
+
+    const streamedBody = body.pipeThrough(creditDeductionStream);
+    const cancelAwareBody = new ReadableStream({
+      async start(controller) {
+        const reader = streamedBody.getReader();
+
+        // Pump loop with error handling to ensure credits are released on mid-stream errors
+        const pump = async (): Promise<void> => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                controller.close();
+                return;
+              }
+              controller.enqueue(value);
+            }
+          } catch (err) {
+            // Mid-stream error: release the reserved credit
+            console.error("[Chat API] Stream error during pump:", err);
+            await settleCredits("release", "stream-error");
+            controller.error(err);
+          }
+        };
+
+        // Start pumping (don't await - let the stream flow)
+        pump();
+      },
+      async cancel(reason) {
+        try {
+          await streamedBody.cancel(reason);
+        } catch {
+          // Ignore cancellation errors.
+        }
+        await settleCredits("release", "stream-cancel");
+      },
+    });
+
+    return new Response(cancelAwareBody, {
+      status: baseResponse.status,
+      statusText: baseResponse.statusText,
+      headers: baseResponse.headers,
+    });
   } catch (error) {
     console.error("Chat API error:", error);
+
+    // Release reserved credit on failure (refund)
+    await releaseReservedCredits("chat-error");
 
     // Extract error details for user-friendly messages
     const errorObj = error as {
