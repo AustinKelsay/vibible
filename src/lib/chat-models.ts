@@ -41,6 +41,40 @@ function getDefaultChatModels(): ChatModel[] {
   ];
 }
 
+// Server-side pricing cache to prevent trusting client-supplied pricing
+let pricingCache: Map<string, { prompt?: string; completion?: string }> | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Get pricing for a model from server-side cache.
+ * This is the ONLY trusted source for pricing - never use client-supplied values.
+ *
+ * @param modelId - The model ID to look up
+ * @param apiKey - OpenRouter API key for fetching models
+ * @returns Pricing object or null if model not found (will use fallback rates)
+ */
+export async function getModelPricing(
+  modelId: string,
+  apiKey: string
+): Promise<{ prompt?: string; completion?: string } | null> {
+  const now = Date.now();
+
+  // Refresh cache if expired or empty
+  if (!pricingCache || now - cacheTimestamp > CACHE_TTL_MS) {
+    const result = await fetchChatModels(apiKey);
+    pricingCache = new Map();
+    for (const model of result.models) {
+      if (model.pricing) {
+        pricingCache.set(model.id, model.pricing);
+      }
+    }
+    cacheTimestamp = now;
+  }
+
+  return pricingCache.get(modelId) ?? null;
+}
+
 export async function fetchChatModels(openRouterApiKey: string): Promise<ChatModelsResult> {
   try {
     const response = await fetch("https://openrouter.ai/api/v1/models", {

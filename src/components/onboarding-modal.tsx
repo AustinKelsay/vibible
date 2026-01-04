@@ -153,6 +153,11 @@ export function OnboardingModal() {
             linear Lightning payment flow right now. No refunds, fiat or
             on-chain payments, or full accounts yet. These will be added later.
           </p>
+          <p className="mt-2">
+            <span className="text-[var(--foreground)] font-medium">Important:</span>{" "}
+            No account—credits are session-only. They'll be lost if you clear cache
+            or use a different browser. You can reopen the same browser later.
+          </p>
         </div>
 
         {/* Admin Password Section - Collapsible */}

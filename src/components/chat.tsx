@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, startTransition } from "react";
 import { ChevronUp, Loader2, Send } from "lucide-react";
 import { usePreferences } from "@/context/preferences-context";
 import { ChatModelSelector } from "./chat-model-selector";
@@ -39,7 +39,7 @@ interface ChatMessage {
 }
 
 export function Chat({ context, variant = "inline" }: ChatProps) {
-  const { chatModel } = usePreferences();
+  const { chatModel, chatModelPricing } = usePreferences();
   const chatId = useMemo(() => {
     if (!context) return `${variant}-global`;
     const book = (context.book ?? "book").replace(/\s+/g, "-");
@@ -51,21 +51,28 @@ export function Chat({ context, variant = "inline" }: ChatProps) {
   const { messages, sendMessage, status, error } = useChat({ id: chatId });
   const [input, setInput] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
+  const prevChatIdRef = useRef<string>(chatId);
 
   const isSidebar = variant === "sidebar";
 
-  // Include both context and model in request body
+  // Include context, model, and pricing in request body
   const requestBody = {
     ...(context ? { context } : {}),
     model: chatModel,
+    ...(chatModelPricing ? { pricing: chatModelPricing } : {}),
   };
 
   const isLoading = status === "streaming" || status === "submitted";
   const hasMessages = messages.length > 0;
 
   useEffect(() => {
-    setIsExpanded(false);
-    setInput("");
+    if (prevChatIdRef.current !== chatId) {
+      prevChatIdRef.current = chatId;
+      startTransition(() => {
+        setIsExpanded(false);
+        setInput("");
+      });
+    }
   }, [chatId]);
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -280,6 +280,13 @@ export function BuyCreditsModal() {
             <li>Lightning payments only (no on-chain)</li>
             <li>No refunds during alpha</li>
           </ul>
+          <div className="mt-3 pt-3 border-t border-[var(--divider)]">
+            <p className="text-[var(--foreground)] font-medium mb-1">⚠️ Session-only credits</p>
+            <p className="text-[var(--muted)]">
+              No account—credits are session-only. They'll be lost if you clear cache
+              or use a different browser. You can reopen the same browser later.
+            </p>
+          </div>
         </div>
 
         {/* Content */}

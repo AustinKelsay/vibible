@@ -1,7 +1,15 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { convertToModelMessages, streamText, UIMessage } from "ai";
 import { z } from "zod";
-import { DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
+import { DEFAULT_CHAT_MODEL, getModelPricing } from "@/lib/chat-models";
+import {
+  computeChatCreditsCost,
+  ModelPricing,
+  CREDIT_USD,
+} from "@/lib/chat-credits";
+import { getSessionFromCookies } from "@/lib/session";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "../../../../convex/_generated/api";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -62,6 +70,22 @@ const formatVerses = (verses?: PageContext["verses"]) => {
 
   const maxLength = 1200;
   return compact.length > maxLength ? `${compact.slice(0, maxLength).trim()}...` : compact;
+};
+
+const TOKEN_CHARS_PER_TOKEN = 4;
+const PROMPT_TOKEN_BUFFER = 1.25;
+const MAX_CHAT_OUTPUT_TOKENS = 1200;
+
+const estimateInputTokens = (messages: Array<{ parts: Array<{ type: string; text?: string }> }>) => {
+  const totalChars = messages.reduce((sum, message) => {
+    const messageChars = message.parts.reduce((partSum, part) => {
+      if (part.type !== "text") return partSum;
+      return partSum + (part.text?.length ?? 0);
+    }, 0);
+    return sum + messageChars;
+  }, 0);
+
+  return Math.ceil(totalChars / TOKEN_CHARS_PER_TOKEN);
 };
 
 /**
@@ -144,7 +168,7 @@ const messageSchema = z.object({
 
 /**
  * Schema for the request body. Must contain a non-empty messages array.
- * Now includes optional model parameter for model selection.
+ * Pricing is looked up server-side from OpenRouter - never trusted from client.
  */
 const requestBodySchema = z.object({
   messages: z.array(messageSchema).min(1, "Request must include at least one message"),
@@ -156,6 +180,7 @@ const requestBodySchema = z.object({
  * POST handler for chat API endpoint.
  * Uses OpenRouter exclusively for all chat models.
  * Validates request body using Zod schema and streams AI responses with metadata.
+ * Requires authentication and deducts credits based on model used.
  */
 export async function POST(req: Request) {
   // Validate OpenRouter API key
@@ -165,6 +190,41 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  // Session and credit tracking - Convex is REQUIRED for authentication
+  const convex = getConvexClient();
+  if (!convex) {
+    // Fail closed: if Convex is unavailable, deny access rather than allowing unauthenticated requests
+    console.error("[Chat] Convex client unavailable - denying request");
+    return Response.json(
+      { error: "Service temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
+  let isAdmin = false;
+  let reservationMade = false;
+  const generationId = crypto.randomUUID();
+
+  // Require valid session
+  const sid = await getSessionFromCookies();
+  if (!sid) {
+    return Response.json(
+      { error: "Session required for chat" },
+      { status: 401 }
+    );
+  }
+
+  // Verify session exists in Convex
+  const session = await convex.query(api.sessions.getSession, { sid });
+  if (!session) {
+    return Response.json(
+      { error: "Invalid session" },
+      { status: 401 }
+    );
+  }
+
+  isAdmin = session.tier === "admin";
 
   let body: unknown;
   try {
@@ -195,6 +255,45 @@ export async function POST(req: Request) {
   const modelId = requestedModel || DEFAULT_CHAT_MODEL;
   const startTime = Date.now();
 
+  // SECURITY: Look up pricing from server-side cache - never trust client-supplied pricing
+  const trustedPricing = await getModelPricing(modelId, process.env.OPENROUTER_API_KEY!);
+
+  // Reserve a conservative worst-case based on estimated prompt size and a server-enforced output cap.
+  const estimatedInputTokens = Math.ceil(
+    estimateInputTokens(messages) * PROMPT_TOKEN_BUFFER
+  );
+  const estimatedCredits = computeChatCreditsCost(
+    estimatedInputTokens,
+    MAX_CHAT_OUTPUT_TOKENS,
+    trustedPricing as ModelPricing
+  );
+  const estimatedCostUsd = estimatedCredits * CREDIT_USD;
+
+  // Reserve estimated credits before streaming (non-admin only)
+  // Actual cost is calculated after streaming based on real token usage
+  if (convex && sid && !isAdmin) {
+    const reserveResult = await convex.mutation(api.sessions.reserveCredits, {
+      sid,
+      amount: estimatedCredits,
+      modelId,
+      generationId,
+      costUsd: estimatedCostUsd,
+    });
+
+    if (!reserveResult.success) {
+      return Response.json(
+        {
+          error: "Insufficient credits",
+          required: estimatedCredits,
+          available: "available" in reserveResult ? reserveResult.available : 0,
+        },
+        { status: 402 }
+      );
+    }
+
+    reservationMade = true;
+  }
+
   try {
     const system = buildSystemPrompt(context);
 
@@ -202,6 +301,50 @@ export async function POST(req: Request) {
       model: openRouter(modelId),
       system,
       messages: await convertToModelMessages(messages as UIMessage[]),
+      maxTokens: MAX_CHAT_OUTPUT_TOKENS,
+      // Convert reservation to debit when stream completes successfully
+      // Calculate actual cost based on real token usage with server-verified pricing
+      onFinish: async ({ usage }) => {
+        if (reservationMade) {
+          try {
+            // Calculate actual credits from real token counts using trusted pricing
+            const inputTokens = usage?.inputTokens ?? 0;
+            const outputTokens = usage?.outputTokens ?? 0;
+            const actualCredits = computeChatCreditsCost(
+              inputTokens,
+              outputTokens,
+              trustedPricing as ModelPricing
+            );
+            const actualCostUsd = actualCredits * CREDIT_USD;
+
+            const deductResult = await convex.mutation(api.sessions.deductCredits, {
+              sid,
+              amount: actualCredits,
+              modelId,
+              generationId,
+              costUsd: actualCostUsd,
+            });
+
+            if (!deductResult.success) {
+              console.error(
+                "[Chat API] Credit conversion failed after streaming:",
+                deductResult
+              );
+            }
+          } catch (error) {
+            console.error("Failed to deduct credits:", error);
+            // Release reservation on debit failure to avoid stuck credits
+            try {
+              await convex.mutation(api.sessions.releaseReservation, {
+                sid,
+                generationId,
+              });
+            } catch (releaseError) {
+              console.error("Failed to release reservation after debit failure:", releaseError);
+            }
+          }
+        }
+      },
     });
 
     // Stream response with metadata injection
@@ -212,6 +355,12 @@ export async function POST(req: Request) {
           const endTime = Date.now();
           const inputTokens = part.totalUsage?.inputTokens ?? 0;
           const outputTokens = part.totalUsage?.outputTokens ?? 0;
+          // Calculate actual credits for metadata display using trusted pricing
+          const actualCredits = computeChatCreditsCost(
+            inputTokens,
+            outputTokens,
+            trustedPricing as ModelPricing
+          );
           return {
             model: modelId,
             promptTokens: inputTokens,
@@ -219,6 +368,7 @@ export async function POST(req: Request) {
             totalTokens: inputTokens + outputTokens,
             finishReason: part.finishReason,
             latencyMs: endTime - startTime,
+            creditsCost: actualCredits,
           };
         }
         return undefined;
@@ -226,6 +376,19 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("Chat API error:", error);
+
+    // Release reservation on failure
+    if (reservationMade) {
+      try {
+        await convex.mutation(api.sessions.releaseReservation, {
+          sid,
+          generationId,
+        });
+      } catch (releaseError) {
+        console.error("Failed to release reservation:", releaseError);
+      }
+    }
+
     return Response.json(
       { error: "Failed to process chat request" },
       { status: 500 }

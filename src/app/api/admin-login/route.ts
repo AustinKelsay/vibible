@@ -84,10 +84,16 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // Upgrade session to admin
-    await convex.action(api.sessions.upgradeToAdmin, {
+    // Upgrade session to admin using HMAC token (never transmit raw secret)
+    const timestamp = Date.now().toString();
+    const authToken = createHmac("sha256", adminPasswordSecret)
+      .update(`admin-upgrade:${timestamp}:${sid}`)
+      .digest("hex");
+
+    await convex.action(api.adminActions.upgradeToAdmin, {
       sid,
-      serverSecret: adminPasswordSecret,
+      timestamp,
+      authToken,
     });
 
     return NextResponse.json({ success: true });

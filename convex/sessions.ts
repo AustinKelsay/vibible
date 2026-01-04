@@ -1,6 +1,5 @@
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { internal } from "./_generated/api";
 
 function resolveTier(currentTier: string, credits: number): "free" | "paid" | "admin" {
   if (currentTier === "admin") return "admin";
@@ -373,35 +372,90 @@ export const deductCredits = mutation({
 
       // If reservation exists but not yet converted to generation, convert it
       if (hasReservation && !hasGeneration) {
-        // Find the reservation entry to get its metadata
+        // Find the reservation entry to get the reserved amount
         const reservationEntry = ledgerEntries.find(
           (e) => e.reason === "reservation"
         );
+        const reservedAmount = Math.abs(reservationEntry?.delta ?? args.amount);
+        let actualAmount = args.amount;
+        let insufficientCredits = false;
+        let shortfall = 0;
 
-        // Record generation entry (credits already deducted, so delta is 0 net change)
+        // Calculate the difference between reserved and actual
+        // If actual < reserved: refund the difference to user
+        // If actual > reserved: charge extra (shouldn't happen with conservative estimates)
+        const difference = reservedAmount - actualAmount;
+        let newCredits = session.credits;
+
+        if (difference > 0) {
+          // User was overcharged - refund the difference
+          newCredits = session.credits + difference;
+          const nextTier = resolveTier(session.tier, newCredits);
+          await ctx.db.patch(session._id, {
+            credits: newCredits,
+            tier: nextTier,
+          });
+        } else if (difference < 0) {
+          // User was undercharged - try to charge the extra
+          const extraNeeded = Math.abs(difference);
+          if (session.credits >= extraNeeded) {
+            newCredits = session.credits - extraNeeded;
+            const nextTier = resolveTier(session.tier, newCredits);
+            await ctx.db.patch(session._id, {
+              credits: newCredits,
+              tier: nextTier,
+            });
+          } else {
+            // Not enough credits to cover the extra. Keep the reserved charge,
+            // convert the reservation to a generation entry, and return an error.
+            insufficientCredits = true;
+            shortfall = extraNeeded - session.credits;
+            actualAmount = reservedAmount;
+          }
+        }
+
+        // Ledger entries: fully reverse reservation, then record actual charge
+        // This ensures ledger sum equals actual amount charged:
+        // reservation(-reserved) + release(+reserved) + generation(-actual) = -actual
+        const now = Date.now();
+
+        // 1. Release the reservation (fully reverse it)
         await ctx.db.insert("creditLedger", {
           sid: args.sid,
-          delta: -args.amount,
+          delta: reservedAmount, // positive to reverse the negative reservation
+          reason: "reservation_release",
+          generationId: args.generationId,
+          createdAt: now,
+        });
+
+        // 2. Record the actual generation charge
+        await ctx.db.insert("creditLedger", {
+          sid: args.sid,
+          delta: -actualAmount,
           reason: "generation",
           modelId: args.modelId,
           costUsd: args.costUsd,
           generationId: args.generationId,
-          createdAt: Date.now(),
+          createdAt: now + 1, // +1ms to ensure ordering
         });
 
-        // Record refund to cancel out the reservation (net effect: reservation -> generation)
-        await ctx.db.insert("creditLedger", {
-          sid: args.sid,
-          delta: args.amount,
-          reason: "refund",
-          generationId: args.generationId,
-          createdAt: Date.now(),
-        });
+        if (insufficientCredits) {
+          return {
+            success: false,
+            error: "Insufficient credits",
+            required: args.amount,
+            available: reservedAmount + session.credits,
+            shortfall,
+            newBalance: newCredits,
+            converted: true,
+          };
+        }
 
         return {
           success: true,
-          newBalance: session.credits,
+          newBalance: newCredits,
           converted: true,
+          refunded: difference > 0 ? difference : undefined,
         };
       }
 
@@ -502,31 +556,4 @@ export const upgradeToAdminInternal = internalMutation({
   },
 });
 
-/**
- * Public action to upgrade a session to admin tier.
- * Validates a server-side secret before calling the internal mutation.
- * This allows API routes to call admin upgrade while keeping it secure.
- *
- * @param sid - Session ID to upgrade
- * @param serverSecret - Secret that must match ADMIN_PASSWORD_SECRET env var
- * @throws Error if secret is invalid or session is not found
- */
-export const upgradeToAdmin = action({
-  args: {
-    sid: v.string(),
-    serverSecret: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const expectedSecret = process.env.ADMIN_PASSWORD_SECRET;
-
-    if (!expectedSecret || args.serverSecret !== expectedSecret) {
-      throw new Error("Unauthorized");
-    }
-
-    await ctx.runMutation(internal.sessions.upgradeToAdminInternal, {
-      sid: args.sid,
-    });
-
-    return { success: true };
-  },
-});
+// Note: upgradeToAdmin action moved to adminActions.ts (requires "use node" for crypto)

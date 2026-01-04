@@ -42,7 +42,9 @@ function getLndConfig() {
   const macaroon = process.env.LND_INVOICE_MACAROON;
 
   if (!host || !macaroon) {
-    throw new LndError("LND_HOST and LND_INVOICE_MACAROON must be set");
+    // Don't expose which config is missing
+    console.error("[LND] Missing required configuration");
+    throw new LndError("Lightning payments not configured");
   }
 
   return { host, macaroon };
@@ -75,8 +77,10 @@ export async function createLndInvoice(
   });
 
   if (!response.ok) {
+    // Log full error server-side for debugging, but don't expose to callers
     const errorText = await response.text().catch(() => "Unknown error");
-    throw new LndError(`LND invoice creation failed: ${errorText}`, response.status);
+    console.error("[LND] Invoice creation failed:", response.status, errorText);
+    throw new LndError("Invoice creation failed", response.status);
   }
 
   const data: LndInvoiceResponse = await response.json();
@@ -85,17 +89,34 @@ export async function createLndInvoice(
 
 /**
  * Look up an invoice by payment hash.
- * @param rHashHex - Payment hash in hex format
+ * @param rHash - Payment hash (accepts hex, hex with 0x prefix, or base64)
  * @returns Invoice details including settlement status
  */
 export async function lookupLndInvoice(
-  rHashHex: string
+  rHash: string
 ): Promise<LndInvoiceLookup> {
   const { host, macaroon } = getLndConfig();
 
+  // Sanitize the r_hash - handle various input formats
+  let hexHash = rHash;
+
+  // Strip "0x" prefix if present
+  if (hexHash.startsWith("0x") || hexHash.startsWith("0X")) {
+    hexHash = hexHash.slice(2);
+  }
+
+  // Check if it's valid hex (only 0-9, a-f, A-F)
+  // LND returns r_hash as base64, but we should have converted to hex on storage
+  // If it's not hex, assume it's base64 and convert
+  const isHex = /^[0-9a-fA-F]+$/.test(hexHash);
+  if (!isHex) {
+    // Assume it's base64, convert to hex
+    hexHash = Buffer.from(rHash, "base64").toString("hex");
+  }
+
   // LND expects the r_hash as a URL-safe base64 string in the path
   // Convert hex to bytes, then to base64url
-  const bytes = Buffer.from(rHashHex, "hex");
+  const bytes = Buffer.from(hexHash, "hex");
   const rHashBase64Url = bytes.toString("base64url");
 
   const response = await fetch(
@@ -110,8 +131,10 @@ export async function lookupLndInvoice(
   );
 
   if (!response.ok) {
+    // Log full error server-side for debugging, but don't expose to callers
     const errorText = await response.text().catch(() => "Unknown error");
-    throw new LndError(`LND invoice lookup failed: ${errorText}`, response.status);
+    console.error("[LND] Invoice lookup failed:", response.status, errorText);
+    throw new LndError("Invoice lookup failed", response.status);
   }
 
   const data: LndInvoiceLookup = await response.json();

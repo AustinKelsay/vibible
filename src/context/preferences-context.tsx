@@ -6,6 +6,12 @@ import { Translation, DEFAULT_TRANSLATION, TRANSLATIONS } from "@/lib/bible-api"
 import { DEFAULT_IMAGE_MODEL } from "@/lib/image-models";
 import { DEFAULT_CHAT_MODEL } from "@/lib/chat-models";
 
+// Pricing info from OpenRouter ($/1M tokens as strings)
+export interface ChatModelPricing {
+  prompt?: string;
+  completion?: string;
+}
+
 interface PreferencesContextType {
   translation: Translation;
   setTranslation: (translation: Translation) => void;
@@ -13,7 +19,8 @@ interface PreferencesContextType {
   imageModel: string;
   setImageModel: (model: string) => void;
   chatModel: string;
-  setChatModel: (model: string) => void;
+  chatModelPricing: ChatModelPricing | null;
+  setChatModel: (model: string, pricing?: ChatModelPricing) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextType | null>(null);
@@ -27,6 +34,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [translation, setTranslationState] = useState<Translation>(DEFAULT_TRANSLATION);
   const [imageModel, setImageModelState] = useState<string>(DEFAULT_IMAGE_MODEL);
   const [chatModel, setChatModelState] = useState<string>(DEFAULT_CHAT_MODEL);
+  const [chatModelPricing, setChatModelPricingState] = useState<ChatModelPricing | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const router = useRouter();
 
@@ -44,9 +52,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         if (prefs.imageModel) {
           setImageModelState(prefs.imageModel);
         }
-        // Load chat model preference
+        // Load chat model preference and pricing
         if (prefs.chatModel) {
           setChatModelState(prefs.chatModel);
+        }
+        if (prefs.chatModelPricing) {
+          setChatModelPricingState(prefs.chatModelPricing);
         }
       }
     } catch {
@@ -56,7 +67,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Helper to save all preferences
-  const savePreferences = (prefs: { translation: Translation; imageModel: string; chatModel: string }) => {
+  const savePreferences = (prefs: {
+    translation: Translation;
+    imageModel: string;
+    chatModel: string;
+    chatModelPricing?: ChatModelPricing | null;
+  }) => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
     } catch {
@@ -67,7 +83,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Save to localStorage and cookie when translation changes, then refresh page
   const setTranslation = (newTranslation: Translation) => {
     setTranslationState(newTranslation);
-    savePreferences({ translation: newTranslation, imageModel, chatModel });
+    savePreferences({ translation: newTranslation, imageModel, chatModel, chatModelPricing });
     // Set cookie for server-side reading (expires in 1 year)
     document.cookie = `${COOKIE_NAME}=${newTranslation}; path=/; max-age=31536000; SameSite=Lax`;
     // Refresh the page to get new translation from server
@@ -77,17 +93,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Save image model preference
   const setImageModel = (newModel: string) => {
     setImageModelState(newModel);
-    savePreferences({ translation, imageModel: newModel, chatModel });
+    savePreferences({ translation, imageModel: newModel, chatModel, chatModelPricing });
     // Set cookie for server-side reading (expires in 1 year)
     document.cookie = `${IMAGE_MODEL_COOKIE}=${encodeURIComponent(newModel)}; path=/; max-age=31536000; SameSite=Lax`;
     // Refresh to regenerate image with new model
     router.refresh();
   };
 
-  // Save chat model preference (no refresh needed - takes effect on next message)
-  const setChatModel = (newModel: string) => {
+  // Save chat model preference and pricing (no refresh needed - takes effect on next message)
+  const setChatModel = (newModel: string, pricing?: ChatModelPricing) => {
     setChatModelState(newModel);
-    savePreferences({ translation, imageModel, chatModel: newModel });
+    setChatModelPricingState(pricing ?? null);
+    savePreferences({ translation, imageModel, chatModel: newModel, chatModelPricing: pricing });
     // Set cookie for server-side reading (expires in 1 year)
     document.cookie = `${CHAT_MODEL_COOKIE}=${encodeURIComponent(newModel)}; path=/; max-age=31536000; SameSite=Lax`;
   };
@@ -101,6 +118,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         imageModel: isHydrated ? imageModel : DEFAULT_IMAGE_MODEL,
         setImageModel,
         chatModel: isHydrated ? chatModel : DEFAULT_CHAT_MODEL,
+        chatModelPricing: isHydrated ? chatModelPricing : null,
         setChatModel,
       }}
     >

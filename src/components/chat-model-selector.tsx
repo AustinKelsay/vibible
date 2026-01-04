@@ -69,8 +69,8 @@ export function ChatModelSelector({ variant = "compact" }: ChatModelSelectorProp
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleSelect = (modelId: string) => {
-    setChatModel(modelId);
+  const handleSelect = (model: ChatModel) => {
+    setChatModel(model.id, model.pricing);
     setIsOpen(false);
   };
 
@@ -178,7 +178,7 @@ export function ChatModelSelector({ variant = "compact" }: ChatModelSelectorProp
           return (
             <button
               key={model.id}
-              onClick={() => handleSelect(model.id)}
+              onClick={() => handleSelect(model)}
               className={`w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-[var(--surface)] transition-colors duration-[var(--motion-fast)] ${
                 isSelected ? "bg-[var(--surface)]" : ""
               }`}
