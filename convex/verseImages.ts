@@ -16,9 +16,21 @@ const verseContextValidator = v.object({
   reference: v.optional(v.string()),
 });
 
+const scenePlanValidator = v.object({
+  primarySubject: v.string(),
+  action: v.string(),
+  setting: v.string(),
+  secondaryElements: v.optional(v.string()),
+  mood: v.optional(v.string()),
+  timeOfDay: v.optional(v.string()),
+  composition: v.optional(v.string()),
+});
+
 const promptInputsValidator = v.object({
   reference: v.optional(v.string()),
   aspectRatio: v.optional(v.string()),
+  styleProfileId: v.optional(v.string()),
+  scenePlan: v.optional(scenePlanValidator),
   generationNumber: v.optional(v.number()),
   prevVerse: v.optional(verseContextValidator),
   nextVerse: v.optional(verseContextValidator),
