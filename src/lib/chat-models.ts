@@ -16,6 +16,9 @@ export const PREMIUM_MULTIPLIER = 1.25; // 25% premium over OpenRouter price
 export const DEFAULT_ESTIMATED_TOKENS = 2000; // Conservative estimate for chat (1000 prompt + 1000 completion)
 export const MIN_CHAT_CREDITS = 1; // Minimum credits to charge per chat
 
+// Scene planner uses smaller context: ~200 prompt tokens + 220 max completion + overhead
+export const SCENE_PLANNER_ESTIMATED_TOKENS = 450;
+
 /**
  * Determine if a model is free based on:
  * 1. Model ID ends with ":free" suffix

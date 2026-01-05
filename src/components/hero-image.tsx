@@ -22,9 +22,21 @@ interface VerseContext {
   reference?: string;
 }
 
+interface ScenePlan {
+  primarySubject: string;
+  action: string;
+  setting: string;
+  secondaryElements?: string;
+  mood?: string;
+  timeOfDay?: string;
+  composition?: string;
+}
+
 interface PromptInputs {
   reference?: string;
   aspectRatio?: string;
+  styleProfileId?: string;
+  scenePlan?: ScenePlan;
   generationNumber?: number;
   prevVerse?: VerseContext;
   nextVerse?: VerseContext;
