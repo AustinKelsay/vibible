@@ -133,7 +133,7 @@ This prevents double-charging from retries and allows atomic credit reservation.
 
 **Tier Transitions:** `resolveTier()` centralizes tier updates for all credit mutations. `admin` is sticky and never downgraded; non-admins are always `paid` tier.
 
-**Daily Spending Limit:** `reserveCreditsInternal` checks `checkDailySpendLimit()` before allowing credit reservation. If daily spend exceeds $5 (default), the request is rejected with `"Daily spending limit exceeded"`. The limit resets at UTC midnight.
+**Daily Spending Limit:** `reserveCreditsInternal` checks `checkDailySpendLimit()` before allowing credit reservation. The default limit is defined by the constant `DEFAULT_DAILY_SPEND_LIMIT_USD = 5.0` in `convex/sessions.ts` (line 7). This can be overridden per-session via the `dailySpendLimitUsd` field in the sessions table. The limit is checked at line 72 of `checkDailySpendLimit()` using `session.dailySpendLimitUsd ?? DEFAULT_DAILY_SPEND_LIMIT_USD`. To change the default limit, modify the `DEFAULT_DAILY_SPEND_LIMIT_USD` constant in `convex/sessions.ts`. To override for a specific session, update the session's `dailySpendLimitUsd` field in the Convex database. If daily spend exceeds the limit, the request is rejected with `"Daily spending limit exceeded"`. The limit resets at UTC midnight. Admin sessions bypass the daily spending limit entirely.
 
 ### Partial Refunds with Retry
 
@@ -200,7 +200,7 @@ All protected API routes implement rate limiting to prevent abuse:
 | `/api/generate-image` | 5 requests | 1 minute |
 | `/api/invoice` | 10 requests | 1 minute |
 | `/api/session` | 10 requests | 1 minute |
-| `/api/admin-login` | 5 attempts | 15 minutes + 1hr lockout |
+| `/api/admin-login` | 5 attempts | 15 minutes + 1 hour lockout |
 
 ### Rate Limit Identifier
 
