@@ -32,7 +32,7 @@ The current payment flow is intentionally streamlined:
 - No direct fiat or on-chain payments (though CashApp bridges both to Lightning).
 - No full accounts yet.
 
-These limitations are explicitly shown in the onboarding and buy-credits modals.
+These limitations are explicitly shown in the buy-credits modal (which includes integrated onboarding).
 
 ## Charging Behavior
 
@@ -71,8 +71,7 @@ Client IP hashing uses trusted proxy headers only when configured; otherwise it 
 ### Client
 - `src/context/session-context.tsx` - SessionProvider and useSession hook
 - `src/components/credits-badge.tsx` - Credit balance display
-- `src/components/buy-credits-modal.tsx` - Lightning payment flow
-- `src/components/onboarding-modal.tsx` - First-time user modal
+- `src/components/buy-credits-modal.tsx` - Lightning payment flow + integrated onboarding
 
 ### Utilities
 - `src/lib/session.ts` - JWT signing/verification helpers

@@ -8,7 +8,7 @@ Visibible provides three ways to navigate the Bible:
 
 1. **URL-based** — Direct links like `/genesis/1/1` or `/john/3/16`.
 2. **Arrow navigation** — Prev/next buttons that cross chapter and book boundaries.
-3. **Book menu** — Book icon menu with collapsible book/chapter picker.
+3. **Book menu** — BookOpen icon menu with collapsible book/chapter picker.
 
 ## URL Structure
 
@@ -24,7 +24,7 @@ Examples:
 
 ## Arrow Navigation
 
-Arrows appear on the hero image and below the scripture text.
+Arrows appear in the hero image Control Dock and below the scripture text.
 
 Navigation is seamless across boundaries:
 - Genesis 1:31 → Genesis 2:1 (next chapter)
@@ -37,12 +37,14 @@ At the extremes:
 
 ## Book Menu
 
-Book icon in the header opens a slide-out panel:
+BookOpen icon in the header opens a slide-out panel:
 
 1. **Testament sections** — Collapsible Old Testament (39 books) and New Testament (27 books).
-2. **Book list** — Click a book to see its chapters.
-3. **Chapter grid** — Click a chapter number to see its verses.
-4. **Verse grid** — Click a verse number to navigate to that verse.
+2. **Book list** — Click a book to see its chapters. Books with existing images show an accent dot.
+3. **Chapter grid** — Click a chapter number to see its verses. Chapters with images show an accent dot.
+4. **Verse grid** — Click a verse number to navigate to that verse. Verses with images show an accent dot.
+
+The accent dots indicate which books/chapters/verses have AI-generated images (requires Convex).
 
 ## Chat Sidebar
 
@@ -55,6 +57,18 @@ The NavigationContext also manages the chat sidebar state:
 
 **Keyboard Shortcut:** Pressing Escape closes the chat sidebar when it's open.
 
+**Responsive Behavior:**
+- Desktop (md+): Fixed 384px width on right side
+- Mobile: Full width overlay with backdrop (click backdrop to close)
+
+## Verse Strip
+
+A horizontal scrollable strip below the hero image showing all verses in the current chapter:
+- Current verse is highlighted with accent color
+- Verses with images show an accent dot
+- Verses without images show a muted dot
+- Click any verse to navigate directly
+
 ## Entry Points
 
 - Navigation helpers: `src/lib/navigation.ts`
@@ -62,7 +76,8 @@ The NavigationContext also manages the chat sidebar state:
 - Menu state: `src/context/navigation-context.tsx`
 - Header with menu trigger: `src/components/header.tsx`
 - Arrow navigation: `src/components/hero-image.tsx`, `src/components/scripture-reader.tsx`
-- Verse image indicators: `src/components/verse-strip.tsx` (shows per-verse image dots when browsing chapters)
+- Verse strip navigator: `src/components/verse-strip.tsx`
+- Chat sidebar: `src/components/chat-sidebar.tsx`
 - Chat context setter: `src/components/chat-context-setter.tsx`
 
 ## Related Docs

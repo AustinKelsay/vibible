@@ -4,11 +4,37 @@ High-level overview of how Visibible chat works. Details may change.
 
 ## Overview
 
-- Client uses the AI SDK chat hook to send messages to the API route.
-- Server streams responses from the model via OpenRouter.
-- Default model is `openai/gpt-oss-120b` (configurable via header dropdown).
+- Client uses the AI SDK chat hook (`useChat` from `@ai-sdk/react`) to send messages to the API route.
+- Server streams responses from the model via OpenRouter using `@openrouter/ai-sdk-provider`.
+- Default model is `openai/gpt-oss-120b:free` (configurable via model selector dropdown).
 - **Contextual awareness**: Chat receives prev/next verse context for fuller understanding.
 - **Reverent tone**: System prompt guides AI to be spiritually encouraging.
+
+## Access Control
+
+Chat requires authentication and credits (except for admin users):
+
+1. **Session Required**: Valid session cookie must be present. Returns 401 if missing.
+2. **Credit System**:
+   - Credits are reserved before streaming begins
+   - On successful completion, reservation converts to deduction
+   - On failure/cancellation, credits are refunded
+   - Cost is dynamic based on model pricing via `computeChatCreditsCost()`
+3. **Admin Bypass**: Users with `tier: "admin"` skip credit checks entirely.
+4. **Insufficient Credits**: Returns 402 (Payment Required) with required/available amounts.
+
+## Rate Limiting
+
+The API enforces rate limits via Convex:
+
+- Identifier: Combined IP hash + session ID (prevents multi-session bypass)
+- Endpoint-specific limits configured in `convex/rateLimit.ts`
+- Returns 429 with `Retry-After` header when exceeded
+
+## Security
+
+- **Origin Validation**: Requests must pass `validateOrigin()` check
+- **Server Secret**: Convex mutations require server secret for credit operations
 
 ## Context Handling
 
@@ -75,12 +101,25 @@ This enables the AI to:
 ## Message Metadata
 
 Each streamed message includes metadata for transparency:
-- Token counts (prompt and completion)
-- Response latency
-- Model used
-- Finish reason
+- `model`: Model ID used for generation
+- `promptTokens`: Input token count
+- `completionTokens`: Output token count
+- `totalTokens`: Combined token count
+- `finishReason`: Why generation stopped (e.g., "stop", "length")
+- `latencyMs`: Response time in milliseconds
+- `creditsCharged`: Credits deducted for this message
+- `actualCredits`: Actual cost based on real token usage (for monitoring)
 
-This metadata is displayed in the chat UI via the `ChatMetadata` component.
+This metadata is displayed in the chat UI via the `MessageMetadataDisplay` component.
+
+## Error Handling
+
+The API returns user-friendly errors for common failure modes:
+- **429**: Rate limit exceeded (with retry guidance)
+- **401**: Session required
+- **402**: Insufficient credits (with required/available amounts)
+- **503**: Model temporarily unavailable or max retries exceeded
+- **500**: Generic failure with retry suggestion
 
 ## Entry Points
 
@@ -88,3 +127,4 @@ This metadata is displayed in the chat UI via the `ChatMetadata` component.
 - UI: `src/components/chat.tsx`
 - Model selector: `src/components/chat-model-selector.tsx`
 - Context source: `src/app/[book]/[chapter]/[verse]/page.tsx`
+- Chat models lib: `src/lib/chat-models.ts`

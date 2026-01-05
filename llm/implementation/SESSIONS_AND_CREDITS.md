@@ -39,8 +39,8 @@ This document describes the anonymous session, credit ledger, and Lightning paym
 
 ### Flow Summary
 
-1. **Session creation**: `/api/session` issues an anonymous JWT cookie.
-2. **Free tier**: browse and view images; no generation when credits are zero.
+1. **Session creation**: `/api/session` issues an anonymous JWT cookie with "paid" tier and 0 credits.
+2. **Browse without credits**: Users can view content but cannot generate images when credits are zero.
 3. **Credit purchase**: `/api/invoice` creates a Lightning invoice (300 credits for $3).
 4. **Payment confirmation**: `/api/invoice/:id` checks LND and grants credits when settled.
 5. **Generation**: `/api/generate-image` pre-checks credits, generates, then charges on success.
@@ -51,7 +51,7 @@ This document describes the anonymous session, credit ledger, and Lightning paym
 
 - `NEXT_PUBLIC_CONVEX_URL`: required to enable sessions/credits/persistence.
 - `SESSION_SECRET`: required for JWT signing and IP hashing.
-- `TRUST_PROXY_PLATFORM=vercel` or `TRUSTED_PROXY_IPS`: required to trust proxy headers for client IPs (rate limiting) in production. See `llm/workflows/PROXY_SETUP.md`.
+- `TRUST_PROXY_PLATFORM=vercel` or `TRUSTED_PROXY_IPS`: required to trust proxy headers for client IPs (rate limiting) in production. See `llm/workflow/PROXY_CONFIGURATION.md`.
 - `ENABLE_IMAGE_GENERATION`: must be `true` to allow generation.
 - `OPENROUTER_API_KEY`: required for all image generation.
 - `LND_HOST`, `LND_INVOICE_MACAROON`: required for Lightning invoices and settlement checks.
@@ -184,12 +184,46 @@ Rate limiting is handled by `convex/rateLimit.ts`:
 - Admin login includes additional brute-force protection with IP-based lockout
 - Returns `Retry-After` header for 429 responses
 
+### Rate Limit Status API
+
+**Route:** `GET /api/rate-limit-status`
+
+Clients can check rate limit status before making expensive requests to avoid wasted API calls.
+
+**Response:**
+```typescript
+interface RateLimitStatusResponse {
+  endpoints: {
+    chat: {
+      remaining: number;    // Requests remaining in window
+      limit: number;        // Max requests per window
+      resetAt: number;      // Unix timestamp when window resets
+      windowMs: number;     // Window duration in ms
+    };
+    "generate-image": {
+      remaining: number;
+      limit: number;
+      resetAt: number;
+      windowMs: number;
+    };
+  };
+  dailySpend: {
+    spent: number;          // USD spent today
+    limit: number;          // Daily limit (default $5)
+    remaining: number;      // Budget remaining
+    resetsAt: number;       // UTC midnight timestamp
+  } | null;                 // null for admins
+}
+```
+
+**Usage:** Clients can proactively check limits and show warnings or disable buttons when limits are approaching.
+
 ---
 
 ## API Routes
 
 ### `GET /api/session`
-Returns session state; if no cookie or Convex disabled, returns free tier with `sid: null`.
+Returns session state; if no cookie or Convex disabled, returns `{ sid: null, tier: "paid", credits: 0 }`.
 
 ### `POST /api/session`
 Creates a new anonymous session (Convex required) and sets the JWT cookie.
@@ -276,10 +310,9 @@ function computeChatCreditsCost(
 
 ## Client Integration
 
-- `SessionProvider` (`src/context/session-context.tsx`): boots the session, exposes `buyCredits`, `openOnboarding`, and updates credits.
-- `CreditsBadge`: shows Get Credits / credit balance / Admin.
-- `OnboardingModal`: shows alpha notice, buy option, and admin login.
-- `BuyCreditsModal`: creates invoice, displays QR + BOLT11, polls status until paid or expired.
+- `SessionProvider` (`src/context/session-context.tsx`): boots the session, exposes `buyCredits`, and updates credits.
+- `CreditsBadge`: shows credit balance (clickable to buy) or Admin badge.
+- `BuyCreditsModal`: includes integrated onboarding (welcome flow), creates invoice, displays QR + BOLT11, polls status until paid or expired. Also includes admin login option.
 - `HeroImage`: gates generation based on credits, sends generation requests, and saves metadata to Convex via `saveImage` action.
 
 ---

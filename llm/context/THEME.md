@@ -19,10 +19,11 @@ A restrained, native-like design system optimized for web-first development with
 ```
 background        #ffffff / #0a0a0a (dark)
 surface           #f5f5f5 / #171717 (dark)
-text              #171717 / #ededed (dark)
+foreground        #171717 / #ededed (dark)
 muted             #737373 / #a3a3a3 (dark)
 divider           #e5e5e5 / #262626 (dark)
 accent            #2563eb (blue-600)
+accent-hover      #1d4ed8 (blue-700)
 accent-text       #ffffff
 error             #dc2626
 success           #16a34a
@@ -33,33 +34,43 @@ success           #16a34a
 Use 4px base unit with consistent steps:
 
 ```
-xs    4px
-sm    8px
-md    16px
-lg    24px
-xl    32px
-2xl   48px
+--space-xs    4px
+--space-sm    8px
+--space-md    16px
+--space-lg    24px
+--space-xl    32px
+--space-2xl   48px
 ```
 
 ### Typography
 
 Two fonts only: Geist Sans (body) + Geist Mono (code).
 
+Font size tokens (CSS variables):
 ```
-title-lg    24px / 700 / 1.2 line-height
-title       20px / 600 / 1.3
-body        16px / 400 / 1.5
-body-sm     14px / 400 / 1.5
-caption     12px / 400 / 1.4
+--text-title-lg   24px
+--text-title      20px
+--text-body       16px
+--text-body-sm    14px
+--text-caption    12px
+```
+
+Recommended pairings (not tokenized - apply via Tailwind classes):
+```
+title-lg    24px / font-bold (700) / leading-tight (1.2)
+title       20px / font-semibold (600) / leading-snug (1.3)
+body        16px / font-normal (400) / leading-normal (1.5)
+body-sm     14px / font-normal (400) / leading-normal (1.5)
+caption     12px / font-normal (400) / leading-snug (1.4)
 ```
 
 ### Border Radius
 
 ```
-sm    6px
-md    12px
-lg    16px
-full  9999px (pills, avatars)
+--radius-sm    6px
+--radius-md    12px
+--radius-lg    16px
+--radius-full  9999px (pills, avatars)
 ```
 
 ### Shadows
@@ -67,9 +78,8 @@ full  9999px (pills, avatars)
 Use sparingly. Flat by default.
 
 ```
-none    none
-sm      0 1px 2px rgba(0,0,0,0.05)
-md      0 4px 12px rgba(0,0,0,0.08)
+--shadow-sm    0 1px 2px rgba(0,0,0,0.05)
+--shadow-md    0 4px 12px rgba(0,0,0,0.08)
 ```
 
 ### Motion
@@ -77,8 +87,8 @@ md      0 4px 12px rgba(0,0,0,0.08)
 Fast and gentle. Animate position/opacity only.
 
 ```
-fast    150ms ease-out
-base    200ms ease-out
+--motion-fast    150ms ease-out
+--motion-base    200ms ease-out
 ```
 
 ---

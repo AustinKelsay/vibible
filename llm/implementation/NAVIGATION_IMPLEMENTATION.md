@@ -6,13 +6,14 @@ This document describes how Visibible handles navigation across the entire Bible
 
 ## Architecture Overview
 
-Navigation consists of five parts:
+Navigation consists of six parts:
 
 1. **Navigation Helpers** (`navigation.ts`) — Pure functions for prev/next logic.
 2. **Navigation Context** (`navigation-context.tsx`) — React context for menu and chat sidebar state.
-3. **Book Menu** (`book-menu.tsx`) — Slide-out panel for book/chapter selection.
-4. **Arrow Navigation** — Embedded in `hero-image.tsx` and `scripture-reader.tsx`.
-5. **Chat Sidebar State** — Manages chat panel visibility and verse context for AI.
+3. **Book Menu** (`book-menu.tsx`) — Slide-out panel for book/chapter selection with image indicators.
+4. **Arrow Navigation** — Embedded in `hero-image.tsx` (Control Dock) and `scripture-reader.tsx`.
+5. **Verse Strip** (`verse-strip.tsx`) — Horizontal verse navigator with image indicators.
+6. **Chat Sidebar State** — Manages chat panel visibility and verse context for AI.
 
 ---
 
@@ -108,6 +109,15 @@ getNavigationUrls({ book: genesis, chapter: 1, verse: 5 })
 // → { prevUrl: "/genesis/1/4", nextUrl: "/genesis/1/6" }
 ```
 
+#### `formatReference(location: VerseLocation): string`
+
+Formats a location as a human-readable reference.
+
+```typescript
+formatReference({ book: genesis, chapter: 1, verse: 1 })
+// → "Genesis 1:1"
+```
+
 ### Implementation Logic
 
 The navigation logic uses static data from `bible-structure.ts`:
@@ -187,6 +197,10 @@ function parseVerseUrl(
 
 function verseToUrl(location: VerseLocation): string {
   return `/${location.book.slug}/${location.chapter}/${location.verse}`;
+}
+
+function formatReference(location: VerseLocation): string {
+  return `${location.book.name} ${location.chapter}:${location.verse}`;
 }
 ```
 
@@ -273,26 +287,45 @@ Note: `verseRange`, `heroCaption`, and `imageTitle` are used for display purpose
 
 ### File: `src/components/book-menu.tsx`
 
-Slide-out panel for navigating to any book/chapter.
+Slide-out panel for navigating to any book/chapter with image indicators.
+
+### Component Architecture
+
+The book menu uses a Convex-aware pattern:
+
+```
+BookMenu (entry point)
+├── BookMenuWithConvex (when Convex enabled)
+│   └── Uses queries: getBooksWithImages, getChaptersWithImages, getChapterImageStatus
+└── BookMenuBase (when Convex disabled, or receives data from WithConvex)
+    └── Renders the actual UI
+```
 
 ### Component Structure
 
 ```
-BookMenu
+BookMenuBase
 ├── Backdrop (click to close)
 └── Panel
     ├── Header (title + close/back button)
     └── Content
         ├── Books View
         │   ├── Old Testament (collapsible)
-        │   │   └── Book buttons (39)
+        │   │   └── Book buttons (39) with image dots
         │   └── New Testament (collapsible)
-        │       └── Book buttons (27)
+        │       └── Book buttons (27) with image dots
         ├── Chapters View
-        │   └── Chapter grid (numbered buttons)
+        │   └── Chapter grid (numbered buttons with image dots)
         └── Verses View
-            └── Verse grid (numbered buttons)
+            └── Verse grid (numbered links with image dots)
 ```
+
+### Image Indicators
+
+When Convex is enabled, the menu shows accent-colored dots for:
+- **Books**: Books that have at least one image (`getBooksWithImages`)
+- **Chapters**: Chapters that have at least one image (`getChaptersWithImages`)
+- **Verses**: Verses that have images (`getChapterImageStatus`)
 
 ### State
 
@@ -305,7 +338,7 @@ const [view, setView] = useState<"books" | "chapters" | "verses">("books");
 
 ### User Flow
 
-1. User clicks book icon → `toggleMenu()` → menu slides in.
+1. User clicks BookOpen icon → `toggleMenu()` → menu slides in.
 2. User sees Old/New Testament sections (one expanded).
 3. User clicks a book → view changes to chapter grid.
 4. User clicks a chapter number → view changes to verse grid.
@@ -322,33 +355,56 @@ Note: The menu does **not** auto-navigate to verse 1 when selecting a chapter. U
 
 ---
 
+## Verse Strip
+
+### File: `src/components/verse-strip.tsx`
+
+Horizontal scrollable strip for quick verse navigation within a chapter.
+
+### Component Architecture
+
+Similar to BookMenu, uses Convex-aware pattern:
+
+```
+VerseStrip (entry point)
+├── VerseStripWithConvex (queries getChapterImageStatus)
+└── VerseStripBase (renders UI)
+```
+
+### Features
+
+- Shows all verses in the current chapter as numbered buttons
+- Current verse highlighted with accent background
+- Image indicator dots:
+  - Accent dot: verse has an image
+  - Muted dot: verse has no image
+- Horizontal scroll with hidden scrollbar
+- 44x44px minimum touch targets
+
+---
+
 ## Arrow Navigation
 
-### Hero Image Arrows
+### Hero Image Control Dock
 
 File: `src/components/hero-image.tsx`
 
-Floating circular buttons overlaid on the image.
+The hero image includes a Control Dock at the bottom with:
 
-```typescript
-interface HeroImageProps {
-  prevUrl?: string | null;
-  nextUrl?: string | null;
-  // ...
-}
-
-// Render
-{prevUrl && (
-  <Link href={prevUrl} className="absolute left-3 top-1/2 ...">
-    <ChevronLeft />
-  </Link>
-)}
-{nextUrl && (
-  <Link href={nextUrl} className="absolute right-3 top-1/2 ...">
-    <ChevronRight />
-  </Link>
-)}
 ```
+Control Dock
+├── Left: Verse Navigation
+│   ├── "Prev verse" link (disabled at Genesis 1:1)
+│   └── "Next verse" link (disabled at Revelation 22:21)
+├── Center: Image Navigation
+│   ├── Newer image button
+│   ├── Image count label (e.g., "3 / 5 · Latest")
+│   └── Older image button
+└── Right: Generate Button
+    └── "Generate" with credit cost and ETA
+```
+
+The Control Dock only appears when there are navigation options or images to display.
 
 ### Scripture Reader Arrows
 
@@ -381,14 +437,17 @@ Contains navigation triggers and user controls.
 ```text
 Header
 ├── Left: Brand ("Visibible")
-├── Center: Controls (responsive)
+├── Center: Controls (grouped with dividers)
 │   ├── CreditsBadge (session credits / Get Credits / Admin)
-│   ├── TranslationSelector (Bible translation dropdown)
-│   ├── ImageModelSelector (AI image model dropdown)
-│   └── ChatModelSelector (AI chat model dropdown, variant="compact")
-└── Right: Buttons
-    ├── Chat toggle (MessageCircle icon)
-    └── Menu toggle (Menu icon)
+│   │   [divider]
+│   ├── Settings Group
+│   │   ├── TranslationSelector (variant="compact")
+│   │   ├── ImageModelSelector (variant="compact")
+│   │   └── ChatModelSelector (variant="compact")
+│   │   [divider]
+│   └── Navigation Group
+│       ├── Chat toggle (MessageCircle icon)
+│       └── Menu toggle (BookOpen icon)
 ```
 
 ### Example Implementation
@@ -398,26 +457,53 @@ export function Header() {
   const { toggleMenu, toggleChat } = useNavigation();
 
   return (
-    <header className="flex items-center justify-between ...">
-      <h1 className="text-lg font-semibold">Visibible</h1>
-      <div className="flex items-center gap-2">
+    <header className="...">
+      <h1 className="text-lg font-semibold tracking-tight">Visibible</h1>
+      <nav className="flex items-center">
         <CreditsBadge />
-        <TranslationSelector />
-        <ImageModelSelector />
-        <ChatModelSelector variant="compact" />
-        <button onClick={toggleChat} aria-label="Toggle chat">
-          <MessageCircle />
-        </button>
-        <button onClick={toggleMenu} aria-label="Open navigation menu">
-          <Menu />
-        </button>
-      </div>
+        <Divider />
+        <div className="flex items-center">
+          <TranslationSelector variant="compact" />
+          <ImageModelSelector variant="compact" />
+          <ChatModelSelector variant="compact" />
+        </div>
+        <Divider />
+        <div className="flex items-center">
+          <button onClick={toggleChat} aria-label="Toggle chat">
+            <MessageCircle />
+          </button>
+          <button onClick={toggleMenu} aria-label="Open book navigation">
+            <BookOpen />
+          </button>
+        </div>
+      </nav>
     </header>
   );
 }
 ```
 
-Note: The header adapts responsively; some controls may be hidden or collapsed on smaller screens.
+---
+
+## Chat Sidebar
+
+### File: `src/components/chat-sidebar.tsx`
+
+Slide-out panel for chat functionality.
+
+### Responsive Behavior
+
+- **Desktop (md+)**: Fixed 384px (`w-96`) width on right side
+- **Mobile**: Full width overlay with backdrop
+
+### Component Structure
+
+```
+ChatSidebar
+├── Backdrop (mobile only, click to close)
+└── Aside panel
+    ├── Header ("Chat" title + X close button)
+    └── Chat component (variant="sidebar")
+```
 
 ---
 
@@ -463,23 +549,28 @@ Note: This only handles Genesis 1 verses (1-31). It's a development shortcut, no
 | `src/lib/navigation.ts` | Pure navigation helper functions |
 | `src/context/navigation-context.tsx` | Menu and chat sidebar state context |
 | `src/components/header.tsx` | Header with menu trigger |
-| `src/components/book-menu.tsx` | Slide-out book/chapter picker |
-| `src/components/hero-image.tsx` | Floating arrow navigation |
+| `src/components/book-menu.tsx` | Slide-out book/chapter picker with image indicators |
+| `src/components/verse-strip.tsx` | Horizontal verse navigator with image indicators |
+| `src/components/hero-image.tsx` | Control Dock with verse/image navigation |
 | `src/components/scripture-reader.tsx` | Text-based arrow navigation |
 | `src/components/chat.tsx` | Chat component (uses chat context) |
 | `src/components/chat-sidebar.tsx` | Chat sidebar panel |
+| `src/components/chat-context-setter.tsx` | Sets chat context on verse pages |
 | `src/app/page.tsx` | Root redirect |
 | `src/app/verse/[number]/page.tsx` | Development convenience redirect |
 | `src/app/[book]/[chapter]/[verse]/page.tsx` | Main verse page |
+| `convex/verseImages.ts` | Queries for image indicators |
 
 ---
 
 ## Accessibility
 
-- Menu trigger has `aria-label="Open navigation menu"`
+- Menu trigger has `aria-label="Open book navigation"`
+- Chat trigger has `aria-label="Toggle chat"`
 - Arrow buttons have `aria-label="Previous verse"` / `"Next verse"`
 - Menu panel animates but respects `prefers-reduced-motion` via CSS
 - All interactive elements meet 44x44px touch target minimum
+- Current verse in VerseStrip has `aria-current="page"`
 
 ---
 

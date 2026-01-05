@@ -11,7 +11,7 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
 interface SessionPayload extends JWTPayload {
   sid: string;
-  iph?: string; // IP hash - optional for backward compatibility with old tokens
+  iph?: string;
 }
 
 function getSecretKey(): Uint8Array {
@@ -24,17 +24,20 @@ function getSecretKey(): Uint8Array {
 
 /**
  * Get the secret key for IP hashing.
- * Uses IP_HASH_SECRET if available, falls back to SESSION_SECRET.
  * Separating these secrets provides defense in depth - if SESSION_SECRET
  * leaks, IP hashes remain unpredictable.
  */
 function getIpHashSecretKey(): Uint8Array {
   const ipHashSecret = process.env.IP_HASH_SECRET;
-  if (ipHashSecret && ipHashSecret.length >= 32) {
-    return new TextEncoder().encode(ipHashSecret);
+  if (!ipHashSecret) {
+    throw new Error("IP_HASH_SECRET environment variable is required");
   }
-  // Fallback to SESSION_SECRET for backward compatibility
-  return getSecretKey();
+  if (ipHashSecret.length < 32) {
+    throw new Error(
+      `IP_HASH_SECRET must be at least 32 characters (got ${ipHashSecret.length}).`
+    );
+  }
+  return new TextEncoder().encode(ipHashSecret);
 }
 
 /**
@@ -197,7 +200,6 @@ export async function validateSessionWithIp(
 
 /**
  * Hash an IP address for privacy-preserving storage.
- * Uses IP_HASH_SECRET if available (defense in depth), otherwise SESSION_SECRET.
  */
 export async function hashIp(ip: string): Promise<string> {
   const secretKey = getIpHashSecretKey();
@@ -214,6 +216,7 @@ export async function hashIp(ip: string): Promise<string> {
 /**
  * Extract client IP address from request headers.
  * Checks common proxy headers in order of priority.
+ * Logs when proxy trust is used for audit purposes.
  */
 export function getClientIp(request: Request): string {
   const headers = request.headers;
@@ -226,15 +229,46 @@ export function getClientIp(request: Request): string {
   // X-Forwarded-For can contain multiple IPs; take the first valid IP (original client)
   const forwarded = headers.get("x-forwarded-for");
   const forwardedIp = forwarded ? getFirstValidIp(forwarded) : null;
-  if (forwardedIp) return forwardedIp;
+  if (forwardedIp) {
+    logProxyTrust(peerIp, forwardedIp, "x-forwarded-for");
+    return forwardedIp;
+  }
 
   const realIp = headers.get("x-real-ip");
-  if (realIp && isValidIp(realIp)) return realIp;
+  if (realIp && isValidIp(realIp)) {
+    logProxyTrust(peerIp, realIp, "x-real-ip");
+    return realIp;
+  }
 
   const cfConnectingIp = headers.get("cf-connecting-ip");
-  if (cfConnectingIp && isValidIp(cfConnectingIp)) return cfConnectingIp;
+  if (cfConnectingIp && isValidIp(cfConnectingIp)) {
+    logProxyTrust(peerIp, cfConnectingIp, "cf-connecting-ip");
+    return cfConnectingIp;
+  }
 
   return peerIp ?? "unknown";
+}
+
+/**
+ * Log when proxy trust is used to determine client IP.
+ * Only logs in development or when DEBUG_PROXY is set to avoid log noise in production.
+ */
+function logProxyTrust(
+  proxyIp: string | null,
+  clientIp: string,
+  header: string
+): void {
+  // Only log in development or when explicitly enabled
+  if (
+    process.env.NODE_ENV !== "development" &&
+    process.env.DEBUG_PROXY !== "true"
+  ) {
+    return;
+  }
+
+  console.log(
+    `[Proxy] Trusted proxy ${proxyIp ?? "unknown"} forwarded request for client ${clientIp} (via ${header})`
+  );
 }
 
 type ParsedIp = {

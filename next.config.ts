@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
             // - style-src 'self' 'unsafe-inline': Required for styled-jsx and inline styles
             // - img-src 'self' data: blob: https:: Allow images from self, data URIs, blobs, and HTTPS
             // - font-src 'self': Only allow fonts from same origin
-            // - connect-src 'self' https:: Allow API calls to same origin and HTTPS endpoints
+            // - connect-src: Allow API calls and WebSocket connections (wss: for Convex)
             // - frame-ancestors 'none': Prevent embedding in iframes (like X-Frame-Options)
             key: "Content-Security-Policy",
             value: [
@@ -43,7 +43,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self'",
-              "connect-src 'self' https:",
+              "connect-src 'self' https: wss:",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

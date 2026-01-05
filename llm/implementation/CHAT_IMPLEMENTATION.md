@@ -8,9 +8,10 @@ This document describes the current chat implementation. It is intentionally hig
 
 Visibible chat is a client-to-server streaming flow built on the Vercel AI SDK.
 
-- Client UI uses `useChat` to send messages to `src/app/api/chat/route.ts`.
+- Client UI uses `useChat` from `@ai-sdk/react` to send messages to `src/app/api/chat/route.ts`.
 - The API validates input, builds a compact system prompt, and streams tokens back.
 - Page context is sent with every chat request to keep the model grounded.
+- OpenRouter is accessed via `@openrouter/ai-sdk-provider` (not `@ai-sdk/openai`).
 
 ---
 
@@ -114,6 +115,16 @@ This is efficient because the Bible API caches by chapter—fetching 3 verses fr
   - optional `context` (string or structured object)
   - optional `model` (string, defaults to `DEFAULT_CHAT_MODEL`)
 
+### Security Checks
+
+Before processing, the API performs several security validations:
+
+1. **Origin Validation**: `validateOrigin(req)` checks request origin
+2. **API Key Check**: Ensures `OPENROUTER_API_KEY` is configured
+3. **Convex Availability**: Returns 503 if Convex client unavailable
+4. **Session Required**: `getSessionFromCookies()` must return valid session (401 if missing)
+5. **Rate Limiting**: Checked before request processing (see Rate Limiting section)
+
 ### Validation
 
 - Zod schemas validate:
@@ -164,6 +175,41 @@ This enables the AI to:
 
 ---
 
+## Rate Limiting
+
+The API enforces per-minute rate limits via Convex (`convex/rateLimit.ts`):
+
+| Endpoint | Window | Max Requests |
+|----------|--------|--------------|
+| `chat` | 60 seconds | 20 |
+| `generate-image` | 60 seconds | 5 |
+| `admin-login` | 15 minutes | 5 |
+| `session` | 60 seconds | 10 |
+| `invoice` | 60 seconds | 10 |
+
+### Rate Limit Identifier
+
+To prevent multi-session bypass attacks, the identifier combines:
+- **IP hash**: SHA-256 of client IP (from `x-forwarded-for` or socket)
+- **Session ID**: The user's session cookie value
+
+```typescript
+const rateLimitIdentifier = `${ipHash}:${sid}`;
+```
+
+### Rate Limit Response
+
+When exceeded, returns 429 with:
+```json
+{
+  "error": "Rate limit exceeded",
+  "message": "Too many requests. Please wait before sending more messages.",
+  "retryAfter": 45
+}
+```
+
+---
+
 ## Model Selection
 
 Chat uses **OpenRouter exclusively** for all models. The default model is `openai/gpt-oss-120b:free`.
@@ -173,38 +219,63 @@ Chat uses **OpenRouter exclusively** for all models. The default model is `opena
 - If no model is specified, the default is used.
 - **Models must have valid pricing** - unpriced models are rejected with 400 error.
 
-OpenRouter is configured with a custom base URL and headers (`HTTP-Referer`, `X-Title`).
+OpenRouter is configured via `@openrouter/ai-sdk-provider`:
+
+```typescript
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+
+const openRouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+```
 
 ---
 
 ## Credit System
 
-Chat messages now cost credits based on the selected model's pricing.
+Chat messages cost credits based on the selected model's pricing.
 
 ### Pricing Calculation
 
 Credits are calculated dynamically using `computeChatCreditsCost()`:
 
 - Estimates ~2000 tokens per message (1000 prompt + 1000 completion)
-- Uses OpenRouter's per-token pricing with 25% markup
-- Minimum cost: 1 credit (for free models with `:free` suffix or $0 pricing)
+- Uses OpenRouter's per-token pricing with 25% markup (`PREMIUM_MULTIPLIER = 1.25`)
+- Minimum cost: 1 credit (`MIN_CHAT_CREDITS`) for free models with `:free` suffix or $0 pricing
+- 1 credit = $0.01 (`CREDIT_USD`)
 - Formula: `Math.ceil((tokens × price × 1.25) / $0.01)`
 
 ### Credit Flow
 
-1. **Validate model** - `getChatModelPricing()` fetches pricing; returns 400 if null
-2. **Calculate cost** - `computeChatCreditsCost()` returns estimated credits
-3. **Check balance** - Return 402 if `session.credits < creditAmount`
-4. **Reserve credits** - `reserveCredits()` atomically deducts from balance
-5. **Stream response** - OpenRouter streaming via AI SDK
-6. **Log actual usage** - `computeActualChatCreditsCost()` logs variance for monitoring
-7. **Finalize** - `deductCredits()` on success, `releaseReservation()` on failure
+1. **Validate session** - Return 401 if no session
+2. **Check rate limit** - Return 429 if exceeded
+3. **Validate model** - `getChatModelPricing()` fetches pricing; returns 400 if unavailable
+4. **Calculate cost** - `computeChatCreditsCost()` returns estimated credits
+5. **Check balance** - Return 402 if `session.credits < creditAmount` (admin bypasses)
+6. **Reserve credits** - `reserveCredits()` atomically deducts from balance
+7. **Stream response** - OpenRouter streaming via AI SDK
+8. **Compare costs** - `computeActualChatCreditsCost()` logs variance between estimated and actual
+9. **Finalize** - On success: `deductCredits()` converts reservation to generation; On failure: `releaseReservation()` refunds
+
+### Credit Reservation Pattern
+
+Credits use a reservation system for atomic operations:
+
+```
+Reserve → Stream → Success? → Convert to Deduction
+                 ↓ Failure? → Release Reservation (refund)
+```
+
+This ensures:
+- Credits are immediately unavailable during streaming
+- Failed/cancelled requests get credits back
+- No double-charging on retries (idempotency via `generationId`)
 
 ### Daily Spending Limit
 
-Sessions have a **$5/day spending limit** enforced during credit reservation:
+Sessions have a **$5/day spending limit** (`DEFAULT_DAILY_SPEND_LIMIT_USD`) enforced during credit reservation:
 - Tracked in `dailySpendUsd` field
-- Resets at UTC midnight
+- Resets at UTC midnight (`lastDayReset` comparison)
 - Admin users bypass this limit
 - Returns error with remaining budget when exceeded
 
@@ -260,6 +331,7 @@ When the `/api/chat-models` fetch fails, `ChatModelSelector` sets a fallback mod
     name: "GPT-OSS 120B (Default)",
     provider: "Openai",
     contextLength: 131072,
+    isFree: true,
   }]);
 })
 ```
@@ -270,9 +342,51 @@ This ensures users can always send messages even if the models API is unavailabl
 
 ## Streaming Response
 
-- `streamText` is used to stream tokens from the provider.
+- `streamText` from the `ai` package streams tokens from the provider.
 - `toUIMessageStreamResponse({ messageMetadata })` returns a stream the client can render live.
-- The `messageMetadata` callback injects per-message metadata (token counts, latency, model, finish reason).
+- The `messageMetadata` callback injects per-message metadata on the `finish` event.
+
+### Message Metadata
+
+The API injects metadata when streaming completes:
+
+```typescript
+messageMetadata: ({ part }) => {
+  if (part.type === "finish") {
+    return {
+      model: modelId,
+      promptTokens: part.totalUsage?.inputTokens ?? 0,
+      completionTokens: part.totalUsage?.outputTokens ?? 0,
+      totalTokens: inputTokens + outputTokens,
+      finishReason: part.finishReason,
+      latencyMs: endTime - startTime,
+      creditsCharged: creditAmount,      // Credits deducted
+      actualCredits: actualCredits,      // Actual cost (for monitoring)
+    };
+  }
+}
+```
+
+**Note:** The UI (`MessageMetadataDisplay`) currently displays a subset: model, tokens, latency, finishReason. The `creditsCharged` and `actualCredits` fields are sent but not displayed in the UI.
+
+---
+
+## Error Handling
+
+The API returns user-friendly errors for common failure modes:
+
+| Status | Condition | Message |
+|--------|-----------|---------|
+| 400 | Invalid JSON or validation failure | Details of what failed |
+| 400 | Model not available | Model cannot be priced |
+| 401 | No session cookie | Session required |
+| 402 | Insufficient credits | Required vs available amounts |
+| 429 | Rate limit exceeded | Retry-after guidance |
+| 429 | OpenRouter rate limit | High demand message |
+| 500 | Generic error | Retry suggestion |
+| 503 | Convex unavailable | Service temporarily unavailable |
+| 503 | Model temporarily unavailable | Try different model |
+| 503 | Max retries exceeded | Service busy |
 
 ---
 
@@ -282,7 +396,11 @@ This ensures users can always send messages even if the models API is unavailabl
 |------|---------|
 | `src/app/api/chat/route.ts` | Validation, prompt, model selection, credit flow, streaming |
 | `src/lib/chat-models.ts` | Model pricing functions (`computeChatCreditsCost`, `getChatModelPricing`) |
-| `src/components/chat.tsx` | Request body wiring |
+| `src/lib/session.ts` | Session management, IP hashing (`getSessionFromCookies`, `getClientIp`, `hashIp`) |
+| `src/lib/origin.ts` | Origin validation (`validateOrigin`, `invalidOriginResponse`) |
+| `src/components/chat.tsx` | Request body wiring, UI state |
+| `src/components/chat-metadata.tsx` | `MessageMetadataDisplay`, `ConversationSummary` components |
 | `src/app/[book]/[chapter]/[verse]/page.tsx` | Context assembly for single verse |
 | `src/lib/bible-api.ts` | Bible API client for fetching verse data |
-| `convex/sessions.ts` | Credit reservation and daily spending limit |
+| `convex/sessions.ts` | Credit reservation, deduction, daily spending limit |
+| `convex/rateLimit.ts` | Per-endpoint rate limiting configuration |

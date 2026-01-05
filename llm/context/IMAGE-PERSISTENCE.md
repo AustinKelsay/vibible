@@ -27,7 +27,7 @@ High-level overview of how verse images are persisted and browsed. Details may c
 ## Browsing History
 
 - Controls in the hero image dock let users move to newer/older images.
-- The image count indicator shows the current position and total (e.g., `3 / 7 (Latest)`).
+- The image count indicator shows the current position and total (e.g., `3 / 7 · Latest`).
 - Selecting older images does not change the verse content; it only swaps the displayed art.
 
 ## Dependencies

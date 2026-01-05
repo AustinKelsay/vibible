@@ -38,6 +38,7 @@ export interface ImageModel {
 export const CREDIT_USD = 0.01;
 export const PREMIUM_MULTIPLIER = 1.25;
 export const DEFAULT_ETA_SECONDS = 12;
+export const DEFAULT_CREDITS_COST = 20; // UI fallback for display before pricing loads
 export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 ```
 
@@ -45,6 +46,7 @@ export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 
 `src/app/api/image-models/route.ts` fetches and filters OpenRouter models:
 
+- **Requires authentication**: Returns 401 if no valid session cookie
 - Filters by `architecture.output_modalities` containing `"image"`
 - Drops `-preview` models when a stable counterpart exists
 - Computes `creditsCost` from OpenRouter pricing (`CREDIT_USD` + `PREMIUM_MULTIPLIER`)
@@ -105,9 +107,10 @@ const saveImageAction = useAction(api.verseImages.saveImage);
 
 `HeroImage` fetches `/api/image-models` to surface the current model's `creditsCost` and ETA in the UI:
 
-- Defaults: 20 credits and 12s for unpriced models (only used after pricing fetch completes without data).
+- UI defaults: 20 credits and 12s are used for display before pricing data loads.
 - `canGenerate` is true when Convex is disabled, admin tier is active, or paid tier has enough credits **and pricing has loaded**.
 - Auto-generation only runs when `canGenerate` is true and the session has loaded.
+- **Note**: Unpriced models (`creditsCost === null`) are rejected server-side with a 400 error. The UI disables them in the selector to prevent selection.
 
 #### Pricing Race Condition Prevention
 
@@ -230,12 +233,23 @@ Saved metadata includes `translationId` (current translation), `promptVersion`/`
 - `src/app/api/generate-image/route.ts`
 - `export const dynamic = "force-dynamic"` disables Next.js caching
 
+### Security & Validation
+
+The endpoint enforces multiple security layers:
+
+1. **Origin validation** via `validateOrigin()` - rejects requests from unauthorized origins.
+2. **Convex required** - returns 503 if Convex is unavailable (no fallback mode).
+3. **Session required** via `getSessionFromCookies()` - returns 401 if missing.
+4. **Rate limiting** via `api.rateLimit.checkRateLimit` - returns 429 if exceeded (IP hash + session combo).
+5. **Input sanitization** - `sanitizeReference()` and `sanitizeVerseText()` strip control characters and prompt injection patterns.
+6. **Model validation** - rejects unknown models (400) and unpriced models (400).
+
 ### Credits & Sessions (Reservation Pattern)
 
-When Convex is configured, the endpoint enforces credits using a two-stage reservation pattern to prevent race conditions:
+The endpoint enforces credits using a two-stage reservation pattern to prevent race conditions:
 
-1. Verify session cookie via `getSessionFromCookies()`.
-2. Resolve model pricing and compute `creditsCost` (default 20 if unpriced).
+1. Verify session and resolve model pricing.
+2. **Reject unpriced models** - returns 400 if `creditsCost === null`.
 3. **Reserve credits atomically** via `reserveCredits()` - deducts from balance immediately and creates a `reservation` ledger entry.
 4. If reservation fails (insufficient credits), return 402 with `required`/`available` amounts.
 5. Generate image via OpenRouter.
@@ -328,12 +342,13 @@ Convex persistence is documented in detail in:
 
 ### Server
 
-- Missing `OPENROUTER_API_KEY` returns HTTP 500 with clear error.
-- `ENABLE_IMAGE_GENERATION=false` returns HTTP 403.
-- Missing session (when Convex is enabled) returns HTTP 401.
-- Insufficient credits returns HTTP 402 with required/available amounts.
-- OpenRouter API errors are logged and return `{ error: "Failed to generate image" }`.
-- Unsupported model responses return `{ error: "No image generated - model may not support image output" }`.
+- **400** - Model not available or pricing unavailable (unpriced models rejected).
+- **401** - Missing or invalid session.
+- **402** - Insufficient credits (returns `required`/`available` amounts).
+- **403** - Image generation disabled (`ENABLE_IMAGE_GENERATION=false`) or origin validation failed.
+- **429** - Rate limit exceeded (returns `retryAfter` seconds).
+- **500** - Missing `OPENROUTER_API_KEY`, OpenRouter API errors, or model doesn't support image output.
+- **503** - Convex unavailable (service temporarily unavailable).
 
 ### Client
 
@@ -352,6 +367,7 @@ OPENROUTER_TITLE=visibible
 ENABLE_IMAGE_GENERATION=true
 CONVEX_DEPLOYMENT=prod:your-deployment-name
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment-name.convex.cloud
+CONVEX_SERVER_SECRET=your-server-secret  # Required for server-side Convex operations
 SESSION_SECRET=your-session-secret-here  # Required for credit-gated generation
 ```
 

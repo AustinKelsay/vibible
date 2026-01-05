@@ -43,6 +43,17 @@ export function validateOrigin(request: Request): boolean {
     return true;
   }
 
+  // Allow if the request is same-origin with the target URL.
+  // This keeps production safe even when NEXT_PUBLIC_APP_URL isn't configured.
+  try {
+    const requestOrigin = new URL(request.url).origin;
+    if (origin === requestOrigin) {
+      return true;
+    }
+  } catch {
+    // If URL parsing fails, fall through to allowlist check.
+  }
+
   // Check against allowlist
   const allowedOrigins = getAllowedOrigins();
   return allowedOrigins.includes(origin);

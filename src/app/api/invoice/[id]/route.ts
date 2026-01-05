@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getConvexClient, getConvexServerSecret } from "@/lib/convex-client";
 import { getSessionFromCookies } from "@/lib/session";
 import { lookupLndInvoice, isLndConfigured } from "@/lib/lnd";
+import { validateOrigin, invalidOriginResponse } from "@/lib/origin";
 import { api } from "../../../../../convex/_generated/api";
 
 interface RouteParams {
@@ -17,6 +18,11 @@ export async function GET(
   request: Request,
   { params }: RouteParams
 ): Promise<NextResponse> {
+  // SECURITY: Validate request origin
+  if (!validateOrigin(request)) {
+    return invalidOriginResponse() as NextResponse;
+  }
+
   const convex = getConvexClient();
   if (!convex) {
     return NextResponse.json(
@@ -98,9 +104,14 @@ export async function GET(
  * Confirms payment for an invoice after verifying LND settlement.
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: RouteParams
 ): Promise<NextResponse> {
+  // SECURITY: Validate request origin
+  if (!validateOrigin(request)) {
+    return invalidOriginResponse() as NextResponse;
+  }
+
   const convex = getConvexClient();
   if (!convex) {
     return NextResponse.json(

@@ -12,15 +12,15 @@ High-level overview of how Visibible generates scripture illustrations. Details 
 - **Persistence (Convex)**: When enabled, every image is saved per verse and can be browsed later.
 - **Cost visibility**: Credit cost varies by model; the UI surfaces model-specific costs and ETA estimates.
 - **Transparency**: Saved images include prompt + prompt version/inputs, translation, provider metadata, and image file metadata (mime/size/dimensions) in addition to costs and timing.
-- **Fallback**: When Convex is disabled, images rely on browser HTTP caching only.
+- **Availability**: Image generation requires Convex configuration (sessions, credits, rate limiting). If Convex is disabled, the API returns 503 and generation is unavailable.
 
 ## Current Flow
 
 1. Verse page fetches current verse AND prev/next verses from the Bible API using the selected translation.
 2. `HeroImage` loads existing image history from Convex (if configured).
-3. If no images exist for the verse, `HeroImage` auto-generates the first image **only when generation is allowed** (admin/paid with enough credits, or Convex disabled).
+3. If no images exist for the verse, `HeroImage` auto-generates the first image **only when generation is allowed** (admin/paid with enough credits and Convex enabled).
 4. Client requests `/api/generate-image` with text, optional theme, prevVerse, nextVerse, reference, **model**, and generation count.
-5. If Convex is enabled, the server verifies the session and pre-checks credits (admin bypass). Credit cost is derived from model pricing (defaulting to 20 credits if unknown).
+5. The server requires Convex and a valid session cookie, then pre-checks credits (admin bypass). Credit cost is derived from model pricing; unpriced models are rejected.
 6. Server builds a **storyboard-aware prompt** with strict "no text" + framing guardrails and stamps `promptVersion` + `promptInputs`.
 7. Server generates the image via OpenRouter using the **user-selected model**.
 8. On success, credits are charged (post-charge) and the response includes image URL + prompt + metadata (including `generationId`, provider info, and prompt version/inputs).
@@ -77,9 +77,9 @@ Prompt inputs (reference, aspect ratio, generation number, prev/next context) ar
 
 ## Credits & Sessions
 
-- Credits are only enforced when Convex is configured and a valid session cookie exists.
+- Image generation is only available when Convex is configured; credits are enforced for non-admin sessions.
 - Admin sessions bypass credit checks.
-- Credit cost is derived from OpenRouter pricing with a fallback default (20 credits) for unpriced models.
+- Credit cost is derived from OpenRouter pricing; unpriced models are rejected.
 - See `llm/context/SESSIONS_AND_CREDITS.md` for user-facing behavior and `llm/implementation/SESSIONS_AND_CREDITS.md` for implementation details.
 
 ## Model Selection

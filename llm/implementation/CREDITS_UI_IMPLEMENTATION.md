@@ -1,6 +1,6 @@
 # Credits UI Implementation Guide
 
-This document describes how the free/paid session state is surfaced in the UI and how users purchase credits.
+This document describes how session state and credits are surfaced in the UI and how users purchase credits.
 
 ---
 
@@ -8,8 +8,7 @@ This document describes how the free/paid session state is surfaced in the UI an
 
 - `src/context/session-context.tsx` - session state and helpers.
 - `src/components/credits-badge.tsx` - header badge.
-- `src/components/onboarding-modal.tsx` - first-time prompt.
-- `src/components/buy-credits-modal.tsx` - Lightning invoice flow.
+- `src/components/buy-credits-modal.tsx` - Lightning invoice flow + integrated onboarding.
 - `src/components/hero-image.tsx` - credit gating for generation.
 - `src/app/layout.tsx` - providers + modals mounted globally.
 
@@ -22,14 +21,14 @@ This document describes how the free/paid session state is surfaced in the UI an
 - On mount, calls `GET /api/session`.
 - If no session, creates one via `POST /api/session`.
 - Tracks onboarding state in `localStorage` (`visibible_onboarding_seen`).
-- Auto-opens onboarding for new users with `tier === "free"` and `credits === 0`.
+- Auto-opens `BuyCreditsModal` (with welcome flow) for new non-admin users who haven't seen onboarding.
 
 ### `useSession()` Hook Interface
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `sid` | `string \| null` | Session ID |
-| `tier` | `"free" \| "paid" \| "admin"` | User tier |
+| `tier` | `"paid" \| "admin"` | User tier |
 | `credits` | `number` | Current credit balance |
 | `isLoading` | `boolean` | Session fetch in progress |
 | `error` | `string \| null` | Error message if any |
@@ -38,9 +37,6 @@ This document describes how the free/paid session state is surfaced in the UI an
 | `buyCredits` | `() => void` | Open buy modal |
 | `isBuyModalOpen` | `boolean` | Buy modal state |
 | `closeBuyModal` | `() => void` | Close buy modal |
-| `isOnboardingOpen` | `boolean` | Onboarding modal state |
-| `openOnboarding` | `() => void` | Open onboarding modal |
-| `closeOnboarding` | `() => void` | Close onboarding modal |
 
 ### `useCanGenerate()` Hook
 
@@ -53,7 +49,7 @@ Returns `true` if generation is allowed:
 - `creditsCost === null` (unpriced model) → returns `credits >= 20`
 - Otherwise → returns `credits >= creditsCost` (no tier check)
 
-Note: The null case doesn't explicitly check tier, but free users have 0 credits by default, so they're effectively blocked.
+Note: The null case uses `DEFAULT_CREDITS_COST` (20) as the threshold for unpriced models.
 
 **Important:** `HeroImage` does not use this hook directly. Instead, it implements its own inline logic that also checks `useConvexEnabled()`:
 
@@ -69,22 +65,21 @@ This inline logic always requires `tier === "paid"` for non-admins when Convex i
 
 **File:** `src/components/credits-badge.tsx`
 
-- `admin` tier → shows admin badge.
-- `free` tier or `credits === 0` → shows “Get Credits” button (opens onboarding).
-- `paid` tier → shows credit balance (opens buy modal).
+- `admin` tier → shows admin badge (Shield icon + "Admin" text).
+- Otherwise → shows credit balance with Zap icon (clickable, opens buy modal).
 
 ---
 
-## Onboarding Modal
+## Onboarding (Integrated in BuyCreditsModal)
 
-**File:** `src/components/onboarding-modal.tsx`
+Onboarding is integrated into `BuyCreditsModal` as a "welcome" state, not a separate component.
 
-- Shows the first time a user is free and has zero credits.
-- Fetches `/api/image-models` to show credit cost range.
-- Primary action: buy credits → opens the buy modal.
-- Secondary action: browse for free.
-- Includes alpha notice (Lightning-only, no refunds, no fiat/on-chain, no accounts).
-- Includes optional admin login flow (`/api/admin-login`).
+- Auto-opens for new non-admin users (via `SessionProvider`).
+- Welcome page shows app description and alpha notice.
+- Primary action: "Buy Credits to Generate" → transitions to credit selection.
+- Secondary action: "Browse for Free" → closes modal.
+- Alpha notice includes: Lightning-only payments, no refunds, credits are session-only.
+- Includes optional admin login flow (`/api/admin-login`) in a collapsible section.
 
 ---
 
@@ -124,4 +119,4 @@ This inline logic always requires `tier === "paid"` for non-admins when Convex i
 **File:** `src/app/layout.tsx`
 
 - `SessionProvider` wraps the app.
-- `BuyCreditsModal` and `OnboardingModal` are mounted globally.
+- `BuyCreditsModal` is mounted globally (includes integrated onboarding flow).

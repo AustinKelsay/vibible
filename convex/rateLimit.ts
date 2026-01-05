@@ -135,9 +135,21 @@ export const getRateLimitStatus = query({
 // Admin Login Brute Force Protection
 // ============================================
 
-const ADMIN_LOGIN_LOCKOUT_DURATION = 60 * 60 * 1000; // 1 hour lockout
+const ADMIN_LOGIN_BASE_LOCKOUT_DURATION = 60 * 60 * 1000; // 1 hour base lockout
+const ADMIN_LOGIN_MAX_LOCKOUT_DURATION = 24 * 60 * 60 * 1000; // 24 hour max lockout
 const ADMIN_LOGIN_MAX_ATTEMPTS = 5;
 const ADMIN_LOGIN_WINDOW = 15 * 60 * 1000; // 15 minute window
+
+/**
+ * Calculate lockout duration with exponential backoff.
+ * Each lockout doubles the duration, capped at 24 hours.
+ * lockoutCount 0 → 1 hour, 1 → 2 hours, 2 → 4 hours, 3 → 8 hours, 4+ → 24 hours
+ */
+function calculateLockoutDuration(lockoutCount: number): number {
+  const multiplier = Math.pow(2, lockoutCount);
+  const duration = ADMIN_LOGIN_BASE_LOCKOUT_DURATION * multiplier;
+  return Math.min(duration, ADMIN_LOGIN_MAX_LOCKOUT_DURATION);
+}
 
 /**
  * Check if an IP is locked out from admin login attempts.
@@ -150,6 +162,7 @@ export const checkAdminLoginAllowed = query({
     allowed: boolean;
     lockedUntil?: number;
     attemptsRemaining?: number;
+    lockoutCount?: number;
   }> => {
     const record = await ctx.db
       .query("adminLoginAttempts")
@@ -161,23 +174,30 @@ export const checkAdminLoginAllowed = query({
     }
 
     const now = Date.now();
+    const lockoutCount = record.lockoutCount ?? 0;
 
     // Check if locked out
     if (record.lockedUntil && record.lockedUntil > now) {
-      return { allowed: false, lockedUntil: record.lockedUntil };
+      return { allowed: false, lockedUntil: record.lockedUntil, lockoutCount };
     }
 
     // Check if attempts are within window
     const windowStart = now - ADMIN_LOGIN_WINDOW;
     if (record.lastAttempt < windowStart) {
-      // Old attempts - effectively reset
+      // Old attempts - effectively reset (but lockoutCount persists)
       return { allowed: true, attemptsRemaining: ADMIN_LOGIN_MAX_ATTEMPTS };
     }
 
     // Check attempt count
     if (record.attemptCount >= ADMIN_LOGIN_MAX_ATTEMPTS) {
-      // Should be locked but lockedUntil wasn't set - this is a race condition edge case
-      return { allowed: false, lockedUntil: record.lastAttempt + ADMIN_LOGIN_LOCKOUT_DURATION };
+      // Should be locked but lockedUntil wasn't set - race condition edge case
+      // Use exponential backoff based on current lockout count
+      const lockoutDuration = calculateLockoutDuration(lockoutCount);
+      return {
+        allowed: false,
+        lockedUntil: record.lastAttempt + lockoutDuration,
+        lockoutCount,
+      };
     }
 
     return {
@@ -189,7 +209,8 @@ export const checkAdminLoginAllowed = query({
 
 /**
  * Record a failed admin login attempt.
- * Locks out the IP after MAX_ATTEMPTS failures.
+ * Locks out the IP after MAX_ATTEMPTS failures with exponential backoff.
+ * Each subsequent lockout doubles in duration (1h → 2h → 4h → 8h → 24h max).
  */
 export const recordFailedAdminLogin = mutation({
   args: {
@@ -199,6 +220,7 @@ export const recordFailedAdminLogin = mutation({
     locked: boolean;
     lockedUntil?: number;
     attemptsRemaining: number;
+    lockoutCount?: number;
   }> => {
     const now = Date.now();
 
@@ -213,14 +235,17 @@ export const recordFailedAdminLogin = mutation({
         ipHash: args.ipHash,
         attemptCount: 1,
         lastAttempt: now,
+        lockoutCount: 0,
       });
       return { locked: false, attemptsRemaining: ADMIN_LOGIN_MAX_ATTEMPTS - 1 };
     }
 
-    // Check if window has expired
     const windowStart = now - ADMIN_LOGIN_WINDOW;
-    if (record.lastAttempt < windowStart) {
-      // Reset counter
+    const lockoutExpired = record.lockedUntil !== undefined && record.lockedUntil <= now;
+
+    // Reset attempt counter when the window expires or a lockout has elapsed.
+    // Preserve lockoutCount for backoff.
+    if (record.lastAttempt < windowStart || lockoutExpired) {
       await ctx.db.patch(record._id, {
         attemptCount: 1,
         lastAttempt: now,
@@ -230,16 +255,27 @@ export const recordFailedAdminLogin = mutation({
     }
 
     const newCount = record.attemptCount + 1;
+    const currentLockoutCount = record.lockoutCount ?? 0;
 
     // Check if should lock
     if (newCount >= ADMIN_LOGIN_MAX_ATTEMPTS) {
-      const lockedUntil = now + ADMIN_LOGIN_LOCKOUT_DURATION;
+      const newLockoutCount = currentLockoutCount + 1;
+      const lockoutDuration = calculateLockoutDuration(currentLockoutCount);
+      const lockedUntil = now + lockoutDuration;
+
       await ctx.db.patch(record._id, {
         attemptCount: newCount,
         lastAttempt: now,
         lockedUntil,
+        lockoutCount: newLockoutCount,
       });
-      return { locked: true, lockedUntil, attemptsRemaining: 0 };
+
+      return {
+        locked: true,
+        lockedUntil,
+        attemptsRemaining: 0,
+        lockoutCount: newLockoutCount,
+      };
     }
 
     // Increment counter

@@ -136,5 +136,6 @@ export default defineSchema({
     attemptCount: v.number(),
     lastAttempt: v.number(),
     lockedUntil: v.optional(v.number()), // If set, account is locked until this timestamp
+    lockoutCount: v.optional(v.number()), // Number of times locked out (for exponential backoff)
   }).index("by_ipHash", ["ipHash"]),
 });
