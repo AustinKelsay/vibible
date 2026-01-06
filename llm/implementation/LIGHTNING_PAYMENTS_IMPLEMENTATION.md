@@ -26,6 +26,16 @@ NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
 CONVEX_SERVER_SECRET=your-secure-random-secret
 ```
 
+**Invoice-Only Macaroon:** The `LND_INVOICE_MACAROON` should be a restricted macaroon with only invoice create and lookup permissions. This limits the scope of LND access to the operations required by `src/lib/lnd.ts` (`createLndInvoice` and `lookupLndInvoice`). To generate such a macaroon, use the `lncli bakemacaroon` command:
+
+```bash
+lncli bakemacaroon invoices:read invoices:write
+```
+
+The command outputs a hex-encoded macaroon that can be set directly as `LND_INVOICE_MACAROON`. The `invoices:read` permission allows looking up invoice status, while `invoices:write` allows creating new invoices. LND enforces these permissions at the API level, ensuring the macaroon cannot be used for other operations like sending payments or accessing channel management endpoints.
+
+For detailed information on macaroon permissions and additional options, see the [LND macaroon documentation](https://docs.lightning.engineering/lightning-network-tools/lnd/macaroons).
+
 - If LND is not configured, invoice routes return 503.
 - If Convex is not configured, invoice routes return 503 with "Payment system not available."
 - `CONVEX_SERVER_SECRET` is required for payment confirmation (validates requests come from trusted backend).
