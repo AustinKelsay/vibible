@@ -117,8 +117,8 @@ export function computeAdjustedCreditsCost(
   const base = baseCost ?? DEFAULT_CREDITS_COST;
 
   // Only apply resolution multiplier if model supports it
-  // If no modelId provided, assume support for backward compatibility
-  const modelSupportsResolution = modelId ? supportsResolution(modelId) : true;
+  // If no modelId provided, assume no support (conservative/safe for users)
+  const modelSupportsResolution = modelId ? supportsResolution(modelId) : false;
   const multiplier = modelSupportsResolution ? RESOLUTIONS[resolution].multiplier : 1.0;
 
   return Math.ceil(base * multiplier);

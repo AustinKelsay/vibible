@@ -299,15 +299,13 @@ if (!modelPricing) {
 
 | Variant | Location | Description |
 |---------|----------|-------------|
-| `compact` | Header | Full dropdown with model name and provider |
+| `compact` | (Not currently used) | Full dropdown with model name and provider |
 | `indicator` | Chat input area | Minimal badge showing current model |
 
-```tsx
-// Header usage (default variant)
-<ChatModelSelector />
-<ChatModelSelector variant="compact" />
+**Note:** ChatModelSelector is only used in the chat input area (not the header). The `compact` variant exists but is not currently rendered anywhere.
 
-// Chat input usage
+```tsx
+// Chat input usage (current implementation)
 <ChatModelSelector variant="indicator" />
 ```
 

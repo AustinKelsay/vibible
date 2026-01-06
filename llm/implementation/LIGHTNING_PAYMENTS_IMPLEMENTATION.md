@@ -41,17 +41,21 @@ CONVEX_SERVER_SECRET=your-secure-random-secret
 2. Convex client availability (returns 503 if unavailable).
 3. LND configuration check (returns 503 if not configured).
 4. Session cookie required (returns 401 if missing).
-5. Rate limiting: 10 invoices per minute per IP+session (returns 429 with `Retry-After` header if exceeded).
+5. Rate limiting: 10 invoices per minute per IP (returns 429 with `Retry-After` header if exceeded). Uses IP-only (not session) to prevent multi-session bypass.
 
 **Flow:**
 1. Fetches BTC price via `getBtcPrice()` (Coinbase; 5 min cache).
 2. Converts `$3` bundle price to sats via `usdToSats()`.
-3. Calls `createLndInvoice(amountSats, memo)` with 15-minute expiry.
-4. Converts the LND `r_hash` from base64 → hex (`base64ToHex`).
-5. Stores the invoice in Convex via `api.invoices.createInvoice`.
-6. Returns `invoiceId`, `bolt11`, `amounts`, `expiresAt`, and `credits` (300).
+3. Generates `invoiceId` (UUID) before LND call.
+4. Creates memo with format: `Visibible: {invoiceId}` (enables linking LND ↔ Convex).
+5. Calls `createLndInvoice(amountSats, memo)` with 15-minute expiry.
+6. Converts the LND `r_hash` from base64 → hex (`base64ToHex`).
+7. Stores the invoice in Convex via `api.invoices.createInvoice` (passes pre-generated `invoiceId`).
+8. Returns `invoiceId`, `bolt11`, `amounts`, `expiresAt`, and `credits` (300).
 
 **Stored fields:** `invoiceId`, `sid`, `amountUsd`, `amountSats`, `bolt11`, `paymentHash`, `status`, `createdAt`, `expiresAt`, `paidAt`.
+
+**LND ↔ Convex Linking:** The `invoiceId` in the LND memo allows looking up any invoice in Convex directly from the LND node interface. The `paymentHash` (hex-encoded `r_hash`) also links both systems but is less human-readable.
 
 ---
 
@@ -125,6 +129,7 @@ On success, returns `{ success, alreadyPaid?, newBalance?, creditsAdded? }`.
 **File:** `src/lib/lnd.ts`
 
 - `createLndInvoice(amountSats, memo)` uses the invoice macaroon.
+  - `memo` contains the Convex `invoiceId` for cross-system linking.
 - `lookupLndInvoice(paymentHash)` checks settlement state.
 - Uses 10-second timeouts for LND requests to avoid blocking.
 
@@ -144,7 +149,7 @@ On success, returns `{ success, alreadyPaid?, newBalance?, creditsAdded? }`.
 
 - **Origin validation**: All invoice routes validate the HTTP Origin header to prevent CSRF attacks.
 - **Session scoping**: Invoice status/confirmation requires matching session ownership.
-- **Rate limiting**: Invoice creation is rate-limited (10/min per IP+session) to prevent LND flooding.
+- **Rate limiting**: Invoice creation is rate-limited (10/min per IP) to prevent LND flooding. Uses IP-only identifier to prevent multi-session bypass attacks.
 - **Server secret**: Payment confirmation requires `CONVEX_SERVER_SECRET` to validate trusted backend calls.
 - **Idempotency**: `confirmPayment` safely handles duplicate calls (returns `alreadyPaid: true`).
 - **LND verification**: Credits are granted only after LND reports `SETTLED` state.

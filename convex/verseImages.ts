@@ -140,25 +140,24 @@ export const getChapterImageStatus = query({
       )
       .collect();
 
-    // Extract unique verses that have images for this chapter
-    const versesWithImages = new Set<number>();
+    // Count images per verse for this chapter
+    const imageCounts = new Map<number, number>();
 
     for (const image of images) {
       // Extract verse number from verseId (e.g., "genesis-1-15" -> 15)
       const verseStr = image.verseId.slice(prefix.length);
       const verseNum = parseInt(verseStr, 10);
       if (!isNaN(verseNum)) {
-        versesWithImages.add(verseNum);
+        imageCounts.set(verseNum, (imageCounts.get(verseNum) ?? 0) + 1);
       }
     }
 
-    // Return sorted list of verses with their status
-    // Note: We don't know total verses, so only return verses with images
-    return Array.from(versesWithImages)
-      .sort((a, b) => a - b)
-      .map(verse => ({
+    // Return sorted list of verses with their image counts
+    return Array.from(imageCounts.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([verse, imageCount]) => ({
         verse,
-        hasImage: true,
+        imageCount,
       }));
   },
 });

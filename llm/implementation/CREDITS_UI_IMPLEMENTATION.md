@@ -76,6 +76,13 @@ Onboarding is integrated into `BuyCreditsModal` as a "welcome" state, not a sepa
 
 - Auto-opens for new non-admin users (via `SessionProvider`).
 - Welcome page shows app description and alpha notice.
+- Includes `MiniVerseStrip` component demonstrating verse navigation with image indicator dots:
+  - Shows 5 sample verses (36x36px boxes) with varying dot counts (0-3 dots)
+  - Dots use same styling as main UI: `w-2 h-2` (8px) with `border-[var(--background)]/30` outline
+  - Auto-cycles selection every 2.5 seconds with 500ms fade transitions
+  - Selected verse: accent background, scale-110, shadow glow, pulsing dots
+  - Uses `animate-dot-pulse` CSS animation (defined in globals.css)
+  - Respects `prefers-reduced-motion` for accessibility
 - Primary action: "Buy Credits to Generate" → transitions to credit selection.
 - Secondary action: "Browse for Free" → closes modal.
 - Alpha notice includes: Lightning-only payments, no refunds, credits are session-only.

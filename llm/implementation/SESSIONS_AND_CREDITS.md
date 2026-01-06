@@ -204,18 +204,25 @@ All protected API routes implement rate limiting to prevent abuse:
 
 ### Rate Limit Identifier
 
-Protected endpoints use a combined IP+session identifier:
+Endpoints use one of two identifier strategies:
 
+**IP+Session (for AI features):**
 ```typescript
 const rateLimitIdentifier = `${ipHash}:${sid}`;
 ```
+Used by: `/api/chat`, `/api/generate-image`
 
-**Why combined identifier?**
-- **IP-based primary**: Prevents multi-session rate limit bypass (attacker creating many sessions)
-- **Session suffix**: Provides tracking granularity for debugging/auditing
+**IP-Only (for infrastructure):**
+```typescript
+const rateLimitIdentifier = await hashIp(clientIp);
+```
+Used by: `/api/session`, `/api/invoice`
+
+**Why the difference?**
+- **AI endpoints** use IP+session to allow fair per-session usage while preventing abuse
+- **Invoice endpoint** uses IP-only to prevent multi-session bypass (attacker creating many sessions to flood LND with invoices)
+- **Session endpoint** uses IP-only to prevent session creation spam
 - **Privacy**: IP addresses are hashed with SESSION_SECRET before storage
-
-**Security Note:** Session-only rate limiting (`sid || ipHash`) would allow attackers to multiply their effective rate limit by creating multiple sessions (10 sessions × 20 requests = 200 requests/min instead of 20).
 
 ### Implementation
 
