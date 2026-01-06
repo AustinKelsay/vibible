@@ -39,8 +39,8 @@ This document describes the anonymous session, credit ledger, and Lightning paym
 
 ### Flow Summary
 
-1. **Session creation**: `/api/session` issues an anonymous JWT cookie.
-2. **Free tier**: browse and view images; no generation when credits are zero.
+1. **Session creation**: `/api/session` issues an anonymous JWT cookie with "paid" tier and 0 credits.
+2. **Browse without credits**: Users can view content but cannot generate images when credits are zero.
 3. **Credit purchase**: `/api/invoice` creates a Lightning invoice (300 credits for $3).
 4. **Payment confirmation**: `/api/invoice/:id` checks LND and grants credits when settled.
 5. **Generation**: `/api/generate-image` pre-checks credits, generates, then charges on success.
@@ -51,6 +51,7 @@ This document describes the anonymous session, credit ledger, and Lightning paym
 
 - `NEXT_PUBLIC_CONVEX_URL`: required to enable sessions/credits/persistence.
 - `SESSION_SECRET`: required for JWT signing and IP hashing.
+- `TRUST_PROXY_PLATFORM=vercel` or `TRUSTED_PROXY_IPS`: required to trust proxy headers for client IPs (rate limiting) in production. See `llm/workflow/PROXY_CONFIGURATION.md`.
 - `ENABLE_IMAGE_GENERATION`: must be `true` to allow generation.
 - `OPENROUTER_API_KEY`: required for all image generation.
 - `LND_HOST`, `LND_INVOICE_MACAROON`: required for Lightning invoices and settlement checks.
@@ -64,6 +65,7 @@ If Convex is not configured, session and payment routes return free defaults or 
 
 ### `sessions`
 - `sid`, `tier`, `credits`, `createdAt`, `lastSeenAt`, `lastIpHash`, `flags`.
+- `dailySpendUsd`, `dailySpendLimitUsd`, `lastDayReset` (daily spending cap tracking).
 - `flags` is reserved for future use (e.g., feature flags, beta access).
 - Index: `by_sid`.
 
@@ -74,7 +76,12 @@ If Convex is not configured, session and payment routes return free defaults or 
 ### `creditLedger`
 - `sid`, `delta`, `reason`, `modelId`, `costUsd`, `generationId`, `createdAt`.
 - Indexes: `by_sid` (sid + createdAt), `by_generationId` (generationId + sid).
-- Reasons: `purchase`, `generation`, `refund`, `reservation`. Reservations are created when credits are pre-reserved before generation; refunds restore credits if generation fails or convert reservations to final charges.
+- Reasons:
+  - `purchase` - Credits added via Lightning payment
+  - `generation` - Credits charged for successful generation
+  - `refund` - Credits restored (failed generation or reservation conversion)
+  - `reservation` - Credits pre-reserved before generation
+  - `scene_planner_refund` - Partial refund when scene planner fails but image generation succeeds
 - Note: `costUsd` is stored in the database but **not returned** by `getCreditHistory` for privacy/simplicity.
 
 ### `modelStats`
@@ -93,7 +100,7 @@ If Convex is not configured, session and payment routes return free defaults or 
 | Function | Type | Arguments | Returns |
 |----------|------|-----------|---------|
 | `getSession` | Query | `sid` | `{ sid, tier, credits, createdAt, lastSeenAt }` or `null` |
-| `createSession` | Mutation | `sid, ipHash?` | `{ sid, tier: "free", credits: 0 }` |
+| `createSession` | Mutation | `sid, ipHash?` | `{ sid, tier: "paid", credits: 0 }` |
 | `updateLastSeen` | Mutation | `sid` | `void` |
 | `addCredits` | Mutation | `sid, amount, reason, invoiceId?` | `{ newBalance }` |
 | `reserveCredits` | Mutation | `sid, amount, modelId, generationId, costUsd?` | `{ success, newBalance, alreadyReserved? }` or `{ success: false, error, required, available }` |
@@ -124,7 +131,44 @@ The credit system uses a two-stage reservation pattern to prevent race condition
 
 This prevents double-charging from retries and allows atomic credit reservation.
 
-**Tier Transitions:** `resolveTier()` centralizes tier updates for all credit mutations. `admin` is sticky and never downgraded; non-admins are `paid` when credits > 0, otherwise `free`.
+**Tier Transitions:** `resolveTier()` centralizes tier updates for all credit mutations. `admin` is sticky and never downgraded; non-admins are always `paid` tier.
+
+**Daily Spending Limit:** `reserveCreditsInternal` checks `checkDailySpendLimit()` before allowing credit reservation. The default limit is defined by the constant `DEFAULT_DAILY_SPEND_LIMIT_USD = 5.0` in `convex/sessions.ts` (line 7). This can be overridden per-session via the `dailySpendLimitUsd` field in the sessions table. The limit is checked at line 72 of `checkDailySpendLimit()` using `session.dailySpendLimitUsd ?? DEFAULT_DAILY_SPEND_LIMIT_USD`. To change the default limit, modify the `DEFAULT_DAILY_SPEND_LIMIT_USD` constant in `convex/sessions.ts`. To override for a specific session, update the session's `dailySpendLimitUsd` field in the Convex database. If daily spend exceeds the limit, the request is rejected with `"Daily spending limit exceeded"`. The limit resets at UTC midnight. Admin sessions bypass the daily spending limit entirely.
+
+### Partial Refunds with Retry
+
+For image generation with scene planner, credits are reserved for both the image model and scene planner upfront. If the scene planner fails but image generation succeeds, a partial refund is issued for the scene planner portion.
+
+**Retry logic** (implemented in `/api/generate-image`):
+```typescript
+const maxRetries = 3;
+let refundSuccess = false;
+for (let attempt = 1; attempt <= maxRetries && !refundSuccess; attempt++) {
+  try {
+    await convex.action(api.sessions.addCredits, {
+      sid,
+      amount: scenePlannerCreditsCost,
+      reason: "scene_planner_refund",
+      serverSecret: getConvexServerSecret(),
+    });
+    refundSuccess = true;
+  } catch (refundError) {
+    if (attempt < maxRetries) {
+      // Exponential backoff: 100ms, 200ms, 400ms
+      await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt - 1)));
+    } else {
+      console.error(`Failed to refund after ${maxRetries} attempts:`, refundError);
+      // Continue with request - user over-charged but generation proceeds
+    }
+  }
+}
+```
+
+**Design rationale:**
+- Transient Convex/network issues are handled automatically
+- Max added latency: ~700ms (only if all retries fail)
+- Graceful degradation: request succeeds even if refund fails
+- Ledger entry with reason `"scene_planner_refund"` for audit trail
 
 ### `convex/invoices.ts`
 
@@ -146,10 +190,82 @@ This prevents double-charging from retries and allows atomic credit reservation.
 
 ---
 
+## Rate Limiting
+
+All protected API routes implement rate limiting to prevent abuse:
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `/api/chat` | 20 requests | 1 minute |
+| `/api/generate-image` | 5 requests | 1 minute |
+| `/api/invoice` | 10 requests | 1 minute |
+| `/api/session` | 10 requests | 1 minute |
+| `/api/admin-login` | 5 attempts | 15 minutes + 1 hour lockout |
+
+### Rate Limit Identifier
+
+Protected endpoints use a combined IP+session identifier:
+
+```typescript
+const rateLimitIdentifier = `${ipHash}:${sid}`;
+```
+
+**Why combined identifier?**
+- **IP-based primary**: Prevents multi-session rate limit bypass (attacker creating many sessions)
+- **Session suffix**: Provides tracking granularity for debugging/auditing
+- **Privacy**: IP addresses are hashed with SESSION_SECRET before storage
+
+**Security Note:** Session-only rate limiting (`sid || ipHash`) would allow attackers to multiply their effective rate limit by creating multiple sessions (10 sessions × 20 requests = 200 requests/min instead of 20).
+
+### Implementation
+
+Rate limiting is handled by `convex/rateLimit.ts`:
+- Sliding window algorithm
+- Admin login includes additional brute-force protection with IP-based lockout
+- Returns `Retry-After` header for 429 responses
+
+### Rate Limit Status API
+
+**Route:** `GET /api/rate-limit-status`
+
+Clients can check rate limit status before making expensive requests to avoid wasted API calls.
+
+**Note:** Only cost-incurring endpoints (`chat`, `generate-image`) are exposed. Other rate-limited endpoints (`session`, `invoice`, `admin-login`, `feedback`) are intentionally excluded for security/simplicity.
+
+**Response:**
+```typescript
+interface RateLimitStatusResponse {
+  endpoints: {
+    chat: {
+      remaining: number;    // Requests remaining in window
+      limit: number;        // Max requests per window
+      resetAt: number;      // Unix timestamp when window resets
+      windowMs: number;     // Window duration in ms
+    };
+    "generate-image": {
+      remaining: number;
+      limit: number;
+      resetAt: number;
+      windowMs: number;
+    };
+  };
+  dailySpend: {
+    spent: number;          // USD spent today
+    limit: number;          // Daily limit (default $5)
+    remaining: number;      // Budget remaining
+    resetsAt: number;       // UTC midnight timestamp
+  } | null;                 // null for admins
+}
+```
+
+**Usage:** Clients can proactively check limits and show warnings or disable buttons when limits are approaching.
+
+---
+
 ## API Routes
 
 ### `GET /api/session`
-Returns session state; if no cookie or Convex disabled, returns free tier with `sid: null`.
+Returns session state; if no cookie or Convex disabled, returns `{ sid: null, tier: "paid", credits: 0 }`.
 
 ### `POST /api/session`
 Creates a new anonymous session (Convex required) and sets the JWT cookie.
@@ -171,13 +287,14 @@ Requires session ownership. Verifies LND settlement before confirming payment an
 ### `GET /api/generate-image`
 Credit flow (reservation pattern):
 1. Verify session cookie via `getSessionFromCookies()`.
-2. Resolve model pricing and compute `creditsCost` (default 20 if unpriced).
-3. **Reserve credits atomically** via `reserveCredits()` - deducts from balance immediately.
-4. If reservation fails (insufficient credits), return 402.
-5. Generate image via OpenRouter.
-6. **Convert reservation to charge** via `deductCredits()` - uses double-entry bookkeeping.
-7. If generation fails, **release reservation** via `releaseReservation()` to restore credits.
-8. If post-charge fails, return 402 and discard the generated image.
+2. Fetch model from `fetchImageModels()` and compute `creditsCost` via `computeCreditsCost()`.
+3. **Reject unpriced models** - if `creditsCost` is null, return 400 "Model pricing unavailable".
+4. **Reserve credits atomically** via `reserveCredits()` - deducts from balance immediately.
+5. If reservation fails (insufficient credits or daily limit exceeded), return 402.
+6. Generate image via OpenRouter.
+7. **Convert reservation to charge** via `deductCredits()` - uses double-entry bookkeeping.
+8. If generation fails, **release reservation** via `releaseReservation()` to restore credits.
+9. If post-charge fails, return 402 and discard the generated image.
 
 On success, the response includes:
 - `imageUrl`, `model`, `provider`, `providerRequestId`
@@ -198,6 +315,8 @@ const CREDIT_USD = 0.01; // 1 credit = $0.01
 const PREMIUM_MULTIPLIER = 1.25; // 25% markup
 ```
 
+### Image Generation
+
 ```ts
 function computeCreditsCost(pricingImage?: string): number | null {
   if (!pricingImage) return null;
@@ -207,16 +326,35 @@ function computeCreditsCost(pricingImage?: string): number | null {
 }
 ```
 
-Unpriced models default to 20 credits (~$0.20).
+**Models without pricing are rejected** - no fallback to default cost.
+
+### Chat
+
+Chat credits are calculated dynamically based on model's per-token pricing:
+
+```ts
+function computeChatCreditsCost(
+  pricing: { prompt?: string; completion?: string },
+  estimatedTokens: number = 2000  // 1000 prompt + 1000 completion
+): number | null {
+  // ... validates pricing exists
+  // ... calculates: (tokens × price × PREMIUM_MULTIPLIER) / CREDIT_USD
+  return Math.max(MIN_CHAT_CREDITS, Math.ceil(effectiveUsd / CREDIT_USD));
+}
+```
+
+- Estimates ~2000 tokens per message
+- Free models (`:free` suffix or $0 pricing) cost minimum 1 credit
+- Actual token usage is logged for monitoring after stream completes
+- **Models without pricing are rejected** with 400 error
 
 ---
 
 ## Client Integration
 
-- `SessionProvider` (`src/context/session-context.tsx`): boots the session, exposes `buyCredits`, `openOnboarding`, and updates credits.
-- `CreditsBadge`: shows Get Credits / credit balance / Admin.
-- `OnboardingModal`: shows alpha notice, buy option, and admin login.
-- `BuyCreditsModal`: creates invoice, displays QR + BOLT11, polls status until paid or expired.
+- `SessionProvider` (`src/context/session-context.tsx`): boots the session, exposes `buyCredits`, and updates credits.
+- `CreditsBadge`: shows credit balance (clickable to buy) or Admin badge.
+- `BuyCreditsModal`: includes integrated onboarding (welcome flow), creates invoice, displays QR + BOLT11, polls status until paid or expired. Also includes admin login option.
 - `HeroImage`: gates generation based on credits, sends generation requests, and saves metadata to Convex via `saveImage` action.
 
 ---

@@ -46,7 +46,10 @@ npx convex env unset VARIABLE_NAME
 
 | Variable | Purpose |
 |----------|---------|
-| `ADMIN_PASSWORD_SECRET` | Server-side validation for admin session upgrade |
+| `ADMIN_PASSWORD_SECRET` | HMAC secret for admin session upgrade verification |
+| `CONVEX_SERVER_SECRET` | Server secret for authenticating internal mutations from Next.js API routes |
+
+**Note:** These must be set in both Convex (`npx convex env set`) AND Next.js (`.env.local`). The values must match.
 
 ---
 
@@ -146,6 +149,10 @@ convex/
   invoices.ts     # Invoice mutations/queries
   modelStats.ts   # Generation timing stats
   verseImages.ts  # Image storage
+  rateLimit.ts    # Rate limiting functions
+  feedback.ts     # Feedback submission mutation
+  cleanup.ts      # Cleanup mutations (internal)
+  crons.ts        # Scheduled jobs
   sessions.test.ts # Unit tests
 ```
 
@@ -153,3 +160,48 @@ convex/
 - Server-side client: `src/lib/convex-client.ts`
 - API routes call Convex mutations/queries directly
 - No client-side Convex provider (all server-side)
+
+---
+
+## Scheduled Jobs (Crons)
+
+**File:** `convex/crons.ts`
+
+Convex runs scheduled jobs to clean up expired data and prevent unbounded table growth.
+
+### Cron Schedule
+
+| Job | Schedule | Function |
+|-----|----------|----------|
+| cleanup expired sessions | 3:00 AM UTC daily | `cleanupExpiredSessions` |
+| cleanup stale rate limits | 3:15 AM UTC daily | `cleanupStaleRateLimits` |
+| cleanup admin login attempts | 3:30 AM UTC daily | `cleanupAdminLoginAttempts` |
+
+### Cleanup Behavior
+
+**File:** `convex/cleanup.ts`
+
+All cleanup functions are internal mutations (not callable from outside Convex).
+
+| Function | Deletes | Retention |
+|----------|---------|-----------|
+| `cleanupExpiredSessions` | Sessions past `expiresAt` | Expired only |
+| `cleanupStaleRateLimits` | Rate limits with `windowStart` > 1 hour ago | 1 hour |
+| `cleanupAdminLoginAttempts` | Login attempts with `lastAttempt` > 24 hours ago | 24 hours |
+
+**Batch Limits:** Each cleanup processes up to 100 records per run to avoid timeouts. If more records need cleaning, subsequent runs will process the remainder.
+
+### Viewing Cron Logs
+
+Cron execution logs appear in:
+1. Convex dev terminal (during `npx convex dev`)
+2. Convex dashboard → Logs tab
+
+### Manual Cleanup
+
+In emergencies, you can clear tables via the Convex dashboard:
+1. Open dashboard: `npx convex dashboard`
+2. Navigate to the table
+3. Select and delete records
+
+**Caution:** Deleting active sessions will log users out.

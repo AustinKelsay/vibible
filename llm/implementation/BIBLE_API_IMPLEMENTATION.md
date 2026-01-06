@@ -76,7 +76,7 @@ Handles all communication with bible-api.com.
   - Chapter: `https://bible-api.com/data/{translation}/{bookId}/{chapter}`
   - Reference: `https://bible-api.com/{reference}?translation={translation}`
 - Translation is validated against own keys of `TRANSLATIONS` before use.
-  - Server cookie: `visibible-translation` via `getTranslationFromCookies`.
+  - Server cookie: `visibible-translation` via `getTranslationFromCookies()` in `src/lib/get-translation.ts`.
   - Client hydration: `visibible-preferences` via `PreferencesProvider`.
 
 ### Data Types
@@ -205,14 +205,25 @@ export default async function VersePage({ params }) {
   const bookData = BOOK_BY_SLUG[book.toLowerCase()];
   if (!bookData) redirect("/genesis/1/1");
 
-  // 3. Fetch verse from API
-  const verseData = await getVerse(book, location.chapter, location.verse);
+  // 3. Get user's translation preference from cookie
+  const translation = await getTranslationFromCookies();
+
+  // 4. Fetch verse from API with translation
+  const verseData = await getVerse(book, location.chapter, location.verse, translation);
   if (!verseData) redirect("/genesis/1/1");
 
-  // 4. Calculate navigation URLs
+  // 5. Calculate navigation URLs and fetch prev/next verse data
   const { prevUrl, nextUrl } = getNavigationUrls(location);
+  const prevLocation = getPreviousVerse(location);
+  const nextLocation = getNextVerse(location);
 
-  // 5. Render page
+  // Fetch prev/next verses in parallel (caching reduces redundant calls)
+  const [prevVerseData, nextVerseData] = await Promise.all([
+    prevLocation ? getVerse(prevLocation.book.slug, prevLocation.chapter, prevLocation.verse, translation) : null,
+    nextLocation ? getVerse(nextLocation.book.slug, nextLocation.chapter, nextLocation.verse, translation) : null,
+  ]);
+
+  // 6. Build chat context and render page
   return ( /* ... */ );
 }
 ```
@@ -221,10 +232,29 @@ export default async function VersePage({ params }) {
 
 | Component | Props |
 |-----------|-------|
-| `HeroImage` | `verseText`, `caption`, `prevUrl`, `nextUrl` |
-| `ScriptureReader` | `book`, `chapter`, `verse`, `verseNumber`, `totalVerses`, `prevUrl`, `nextUrl` |
-| `ScriptureDetails` | `book`, `chapter`, `verseRange`, `verseText`, `chapterVerseCount`, `testament`, `reference`, `imageAttribution` |
-| `Chat` | `context` (book, chapter, verseRange, heroCaption, verses) |
+| `ChatContextSetter` | `context` (see Chat Context below) |
+| `HeroImage` | `verseText`, `caption`, `prevUrl`, `nextUrl`, `prevVerse`, `nextVerse`, `currentReference` |
+| `VerseStrip` | `book`, `chapter`, `currentVerse`, `totalVerses` |
+| `ScriptureReader` | `book`, `chapter`, `verse: { number, text }`, `verseNumber`, `totalVerses`, `prevUrl`, `nextUrl` |
+| `ScriptureDetails` | `book`, `chapter`, `verseRange`, `verseText`, `chapterVerseCount`, `testament`, `reference` |
+
+### Chat Context Structure
+
+The `ChatContextSetter` component receives a context object for the AI chat sidebar:
+
+```typescript
+interface ChatContext {
+  book: string;                    // e.g., "Genesis"
+  chapter: number;                 // e.g., 1
+  verseRange: string;              // e.g., "1"
+  heroCaption: string;             // Full verse text
+  verses: { number: number; text: string }[];
+  prevVerse?: { number: number; text: string; reference: string };  // Same chapter only
+  nextVerse?: { number: number; text: string; reference: string };  // Same chapter only
+}
+```
+
+Note: `prevVerse` and `nextVerse` are only included if they are in the same chapter as the current verse, providing relevant narrative context.
 
 ---
 
@@ -246,6 +276,7 @@ bible-api.com enforces **15 requests per 30 seconds** per IP.
 |------|---------|
 | `src/data/bible-structure.ts` | Static book/chapter/verse metadata |
 | `src/lib/bible-api.ts` | API client with caching |
+| `src/lib/get-translation.ts` | Server-side translation preference from cookies |
 | `src/lib/navigation.ts` | Navigation helpers (prev/next verse) |
 | `src/app/[book]/[chapter]/[verse]/page.tsx` | Dynamic verse route |
 

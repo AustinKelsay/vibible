@@ -38,6 +38,7 @@ export interface ImageModel {
 export const CREDIT_USD = 0.01;
 export const PREMIUM_MULTIPLIER = 1.25;
 export const DEFAULT_ETA_SECONDS = 12;
+export const DEFAULT_CREDITS_COST = 20; // UI fallback for display before pricing loads
 export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 ```
 
@@ -45,6 +46,7 @@ export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 
 `src/app/api/image-models/route.ts` fetches and filters OpenRouter models:
 
+- **Requires authentication**: Returns 401 if no valid session cookie
 - Filters by `architecture.output_modalities` containing `"image"`
 - Drops `-preview` models when a stable counterpart exists
 - Computes `creditsCost` from OpenRouter pricing (`CREDIT_USD` + `PREMIUM_MULTIPLIER`)
@@ -105,9 +107,10 @@ const saveImageAction = useAction(api.verseImages.saveImage);
 
 `HeroImage` fetches `/api/image-models` to surface the current model's `creditsCost` and ETA in the UI:
 
-- Defaults: 20 credits and 12s for unpriced models (only used after pricing fetch completes without data).
+- UI defaults: 20 credits and 12s are used for display before pricing data loads.
 - `canGenerate` is true when Convex is disabled, admin tier is active, or paid tier has enough credits **and pricing has loaded**.
 - Auto-generation only runs when `canGenerate` is true and the session has loaded.
+- **Note**: Unpriced models (`creditsCost === null`) are rejected server-side with a 400 error. The UI disables them in the selector to prevent selection.
 
 #### Pricing Race Condition Prevention
 
@@ -230,22 +233,58 @@ Saved metadata includes `translationId` (current translation), `promptVersion`/`
 - `src/app/api/generate-image/route.ts`
 - `export const dynamic = "force-dynamic"` disables Next.js caching
 
+### Security & Validation
+
+The endpoint enforces multiple security layers:
+
+1. **Origin validation** via `validateOrigin()` - rejects requests from unauthorized origins.
+2. **Convex required** - returns 503 if Convex is unavailable (no fallback mode).
+3. **Session required** via `getSessionFromCookies()` - returns 401 if missing.
+4. **Rate limiting** via `api.rateLimit.checkRateLimit` - returns 429 if exceeded (IP hash + session combo).
+5. **Input sanitization** - `sanitizeReference()` and `sanitizeVerseText()` strip control characters and prompt injection patterns.
+6. **Model validation** - rejects unknown models (400) and unpriced models (400).
+
 ### Credits & Sessions (Reservation Pattern)
 
-When Convex is configured, the endpoint enforces credits using a two-stage reservation pattern to prevent race conditions:
+The endpoint enforces credits using a two-stage reservation pattern to prevent race conditions:
 
-1. Verify session cookie via `getSessionFromCookies()`.
-2. Resolve model pricing and compute `creditsCost` (default 20 if unpriced).
-3. **Reserve credits atomically** via `reserveCredits()` - deducts from balance immediately and creates a `reservation` ledger entry.
-4. If reservation fails (insufficient credits), return 402 with `required`/`available` amounts.
-5. Generate image via OpenRouter.
-6. **Convert reservation to charge** via `deductCredits()` - uses double-entry bookkeeping (creates `generation` + compensating `refund` to convert the reservation).
-7. If generation fails, **release reservation** via `releaseReservation()` to restore credits.
-8. If post-charge fails, return 402 and discard the generated image.
+1. Verify session and resolve model pricing.
+2. **Reject unpriced models** - returns 400 if `creditsCost === null`.
+3. **Calculate scene planner cost** - if scene planner is enabled and uses a paid model, compute additional credits via `computeChatCreditsCost()`.
+4. **Reserve total credits atomically** via `reserveCredits()` - reserves `imageCreditsCost + scenePlannerCreditsCost`, deducting from balance immediately.
+5. If reservation fails (insufficient credits), return 402 with `required`/`available` amounts.
+6. **Run scene planner** (if enabled) - makes LLM call to generate scene plan.
+7. **Partial refund if scene planner fails** - if scene planner returns null but was charged for, refund `scenePlannerCreditsCost` with 3 retries and exponential backoff.
+8. Generate image via OpenRouter.
+9. **Convert reservation to charge** via `deductCredits()` - uses double-entry bookkeeping (creates `generation` + compensating `refund` to convert the reservation).
+10. If generation fails, **release reservation** via `releaseReservation()` to restore credits.
+11. If post-charge fails, return 402 and discard the generated image.
 
 **Why reservation?** Prevents over-spending when concurrent requests race. Credits are atomically reserved before the slow OpenRouter call, ensuring the balance check is authoritative.
 
 **Server-side only:** The reservation system is entirely server-side. The client's `useSession()` context only sees the final balance update via `updateCredits()` after generation completes.
+
+### Scene Planner Credit Metering
+
+When the scene planner is enabled (`ENABLE_SCENE_PLANNER !== "false"`, default: enabled), it makes an additional OpenRouter chat completion call. This call is metered:
+
+```typescript
+// Cost calculation (src/app/api/generate-image/route.ts)
+const SCENE_PLANNER_ESTIMATED_TOKENS = 450; // ~200 prompt + 220 max completion + overhead
+
+let scenePlannerCreditsCost = 0;
+if (enableScenePlanner) {
+  const scenePlannerPricing = await getChatModelPricing(scenePlannerModel, openRouterApiKey);
+  if (scenePlannerPricing && !isModelFree({ id: scenePlannerModel, pricing: scenePlannerPricing })) {
+    scenePlannerCreditsCost = computeChatCreditsCost(scenePlannerPricing, SCENE_PLANNER_ESTIMATED_TOKENS) ?? 0;
+  }
+}
+const totalCreditsCost = imageCreditsCost + scenePlannerCreditsCost;
+```
+
+**Default behavior:** The default scene planner model is `openai/gpt-oss-120b` (a paid model), so most requests include `scenePlannerCreditsCost`. If a different model is configured via `OPENROUTER_SCENE_PLANNER_MODEL`, the additional cost is included in the reservation based on that model's pricing.
+
+**Partial refund on failure:** If the scene planner fails or times out, the `scenePlannerCreditsCost` is refunded with 3 retry attempts (exponential backoff: 100ms → 200ms → 400ms). If all retries fail, the error is logged but the request continues (graceful degradation).
 
 ### Prompt Building
 
@@ -297,7 +336,36 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
 - Checks `message.images` first.
 - Falls back to `message.content` for `image_url` or inline base64 data.
 - `provider` is derived from the model ID; `providerRequestId` uses OpenRouter's response `id`.
-- Returns `{ imageUrl, model, provider, providerRequestId, prompt, promptVersion, promptInputs, generationId, creditsCost, costUsd, durationMs, aspectRatio, credits? }` with `Cache-Control: private, max-age=3600`.
+- Returns response with `Cache-Control: private, max-age=3600`.
+
+**Response fields:**
+```typescript
+{
+  imageUrl,
+  model,
+  provider,
+  providerRequestId,
+  generationId,
+  prompt,
+  promptVersion,
+  promptInputs,
+  reference,
+  verseText,
+  chapterTheme?,
+  generationNumber?,
+  // Cost breakdown
+  creditsCost,           // Total credits charged (image + scene planner if used)
+  imageCreditsCost,      // Image model cost
+  scenePlannerCredits,   // Scene planner cost (0 if free model or not used)
+  costUsd,               // Total USD
+  imageCostUsd,          // Image USD
+  scenePlannerCostUsd,   // Scene planner USD
+  scenePlannerUsed,      // Boolean: whether scene planner succeeded
+  durationMs,
+  aspectRatio,
+  credits?,              // Updated balance (if charged)
+}
+```
 
 ### Model Stats (ETA)
 
@@ -328,12 +396,13 @@ Convex persistence is documented in detail in:
 
 ### Server
 
-- Missing `OPENROUTER_API_KEY` returns HTTP 500 with clear error.
-- `ENABLE_IMAGE_GENERATION=false` returns HTTP 403.
-- Missing session (when Convex is enabled) returns HTTP 401.
-- Insufficient credits returns HTTP 402 with required/available amounts.
-- OpenRouter API errors are logged and return `{ error: "Failed to generate image" }`.
-- Unsupported model responses return `{ error: "No image generated - model may not support image output" }`.
+- **400** - Model not available or pricing unavailable (unpriced models rejected).
+- **401** - Missing or invalid session.
+- **402** - Insufficient credits (returns `required`/`available` amounts).
+- **403** - Image generation disabled (`ENABLE_IMAGE_GENERATION=false`) or origin validation failed.
+- **429** - Rate limit exceeded (returns `retryAfter` seconds).
+- **500** - Missing `OPENROUTER_API_KEY`, OpenRouter API errors, or model doesn't support image output.
+- **503** - Convex unavailable (service temporarily unavailable).
 
 ### Client
 
@@ -352,6 +421,7 @@ OPENROUTER_TITLE=visibible
 ENABLE_IMAGE_GENERATION=true
 CONVEX_DEPLOYMENT=prod:your-deployment-name
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment-name.convex.cloud
+CONVEX_SERVER_SECRET=your-server-secret  # Required for server-side Convex operations
 SESSION_SECRET=your-session-secret-here  # Required for credit-gated generation
 ```
 

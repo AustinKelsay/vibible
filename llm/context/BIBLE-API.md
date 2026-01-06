@@ -55,4 +55,5 @@ Note: `bookId` uses uppercase API identifiers (e.g., "GEN", "MAT"), not URL slug
 
 - Static data: `src/data/bible-structure.ts`
 - API client: `src/lib/bible-api.ts`
+- Translation helper: `src/lib/get-translation.ts` (server-side cookie handling)
 - Page route: `src/app/[book]/[chapter]/[verse]/page.tsx`

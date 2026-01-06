@@ -24,5 +24,7 @@ export async function GET() {
   return NextResponse.json({
     models: result.models,
     ...(result.error ? { error: result.error } : {}),
+  }, {
+    headers: { "Cache-Control": "private, max-age=3600" },
   });
 }

@@ -7,9 +7,21 @@ const verseContextValidator = v.object({
   reference: v.optional(v.string()),
 });
 
+const scenePlanValidator = v.object({
+  primarySubject: v.string(),
+  action: v.string(),
+  setting: v.string(),
+  secondaryElements: v.optional(v.string()),
+  mood: v.optional(v.string()),
+  timeOfDay: v.optional(v.string()),
+  composition: v.optional(v.string()),
+});
+
 const promptInputsValidator = v.object({
   reference: v.optional(v.string()),
   aspectRatio: v.optional(v.string()),
+  styleProfileId: v.optional(v.string()),
+  scenePlan: v.optional(scenePlanValidator),
   generationNumber: v.optional(v.number()),
   prevVerse: v.optional(verseContextValidator),
   nextVerse: v.optional(verseContextValidator),
@@ -73,7 +85,15 @@ export default defineSchema({
     lastSeenAt: v.number(),
     lastIpHash: v.optional(v.string()),
     flags: v.optional(v.array(v.string())),
-  }).index("by_sid", ["sid"]),
+    // Daily spending cap (security feature to prevent API cost abuse)
+    dailySpendUsd: v.optional(v.number()), // USD spent in current day
+    dailySpendLimitUsd: v.optional(v.number()), // Max USD per day (default $5)
+    lastDayReset: v.optional(v.number()), // Timestamp of last daily reset (UTC midnight)
+    // Session expiration (90 days from last activity)
+    expiresAt: v.optional(v.number()),
+  })
+    .index("by_sid", ["sid"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   // Lightning invoices for credit purchases
   invoices: defineTable({
@@ -113,4 +133,49 @@ export default defineSchema({
     p50Ms: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_modelId", ["modelId"]),
+
+  // Rate limiting for API endpoints
+  rateLimits: defineTable({
+    identifier: v.string(), // Session ID or IP hash
+    endpoint: v.string(), // API endpoint name (e.g., "chat", "generate-image")
+    count: v.number(), // Number of requests in current window
+    windowStart: v.number(), // Start of current time window (ms timestamp)
+  }).index("by_identifier_endpoint", ["identifier", "endpoint"]),
+
+  // Admin login attempt tracking for brute force protection
+  adminLoginAttempts: defineTable({
+    ipHash: v.string(),
+    attemptCount: v.number(),
+    lastAttempt: v.number(),
+    lockedUntil: v.optional(v.number()), // If set, account is locked until this timestamp
+    lockoutCount: v.optional(v.number()), // Number of times locked out (for exponential backoff)
+  }).index("by_ipHash", ["ipHash"]),
+
+  // User feedback submissions
+  feedback: defineTable({
+    sid: v.optional(v.string()), // Session ID (for rate limiting context)
+    message: v.string(), // Feedback text content
+    verseContext: v.optional(
+      v.object({
+        book: v.optional(v.string()),
+        chapter: v.optional(v.number()),
+        verseRange: v.optional(v.string()),
+      })
+    ),
+    userAgent: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_createdAt", ["createdAt"]),
+
+  // SECURITY: Admin usage audit log for tracking admin API usage
+  // Admin bypasses credit checks, so we log separately for visibility
+  adminAuditLog: defineTable({
+    sid: v.string(), // Admin session ID
+    endpoint: v.string(), // "chat" | "generate-image"
+    modelId: v.string(), // Model used
+    estimatedCredits: v.number(), // What it would have cost
+    estimatedCostUsd: v.number(), // USD equivalent
+    createdAt: v.number(),
+  })
+    .index("by_sid", ["sid", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
 });

@@ -8,7 +8,6 @@ import {
 } from "@/lib/image-models";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../convex/_generated/api";
-
 interface ModelStats {
   modelId: string;
   etaSeconds: number;
@@ -77,5 +76,7 @@ export async function GET() {
     models: modelsWithStats,
     creditRange,
     ...(result.error ? { error: result.error } : {}),
+  }, {
+    headers: { "Cache-Control": "private, max-age=3600" },
   });
 }
