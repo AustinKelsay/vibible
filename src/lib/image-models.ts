@@ -31,6 +31,99 @@ export function computeCreditsCost(pricingImage: string | undefined): number | n
 
 export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 
+// Image aspect ratio types and configuration
+export type ImageAspectRatio = "16:9" | "21:9" | "3:2";
+
+export const ASPECT_RATIOS: Record<ImageAspectRatio, { label: string; cssRatio: string }> = {
+  "16:9": { label: "Widescreen (16:9)", cssRatio: "16/9" },
+  "21:9": { label: "Ultra-wide (21:9)", cssRatio: "21/9" },
+  "3:2": { label: "Classic (3:2)", cssRatio: "3/2" },
+};
+
+export const DEFAULT_ASPECT_RATIO: ImageAspectRatio = "16:9";
+
+// Image resolution types and configuration
+export type ImageResolution = "1K" | "2K" | "4K";
+
+export const RESOLUTIONS: Record<ImageResolution, { label: string; multiplier: number }> = {
+  "1K": { label: "1K Standard", multiplier: 1.0 },
+  "2K": { label: "2K High", multiplier: 2.0 },
+  "4K": { label: "4K Ultra", multiplier: 4.0 },
+};
+
+export const DEFAULT_RESOLUTION: ImageResolution = "1K";
+
+/**
+ * Model prefixes that support user-configurable resolution settings.
+ *
+ * Currently only Gemini models support the `image_size` parameter (1K, 2K, 4K).
+ * This list should be expanded as more providers add resolution support.
+ *
+ * IMPORTANT: Only add model prefixes here when the provider's API actually
+ * respects the resolution setting. Users are charged based on this - if a
+ * model is listed here but ignores resolution, users pay extra for nothing.
+ */
+const RESOLUTION_SUPPORTED_MODEL_PREFIXES = [
+  "google/gemini",  // Gemini models support image_size parameter
+];
+
+/**
+ * Check if a model supports user-configurable resolution settings.
+ *
+ * This determines:
+ * 1. Whether the resolution multiplier is applied to credit costs
+ * 2. Whether the image_size parameter is sent to the API
+ *
+ * @param modelId - The full model ID (e.g., "google/gemini-2.5-flash-image")
+ * @returns true if the model supports resolution configuration
+ */
+export function supportsResolution(modelId: string): boolean {
+  return RESOLUTION_SUPPORTED_MODEL_PREFIXES.some(prefix =>
+    modelId.toLowerCase().startsWith(prefix.toLowerCase())
+  );
+}
+
+/**
+ * Check if a value is a valid ImageAspectRatio
+ */
+export function isValidAspectRatio(value: string): value is ImageAspectRatio {
+  return value in ASPECT_RATIOS;
+}
+
+/**
+ * Check if a value is a valid ImageResolution
+ */
+export function isValidResolution(value: string): value is ImageResolution {
+  return value in RESOLUTIONS;
+}
+
+/**
+ * Compute credit cost with resolution multiplier applied.
+ *
+ * The resolution multiplier is only applied if the model supports resolution
+ * settings. This prevents users from being charged extra for resolution
+ * options that the model ignores.
+ *
+ * @param baseCost - Base credit cost from model pricing
+ * @param resolution - User-selected resolution
+ * @param modelId - Model ID to check resolution support (optional for backward compat)
+ * @returns Adjusted credit cost (with multiplier if supported, base cost otherwise)
+ */
+export function computeAdjustedCreditsCost(
+  baseCost: number | null | undefined,
+  resolution: ImageResolution,
+  modelId?: string
+): number {
+  const base = baseCost ?? DEFAULT_CREDITS_COST;
+
+  // Only apply resolution multiplier if model supports it
+  // If no modelId provided, assume support for backward compatibility
+  const modelSupportsResolution = modelId ? supportsResolution(modelId) : true;
+  const multiplier = modelSupportsResolution ? RESOLUTIONS[resolution].multiplier : 1.0;
+
+  return Math.ceil(base * multiplier);
+}
+
 interface OpenRouterModel {
   id: string;
   name: string;

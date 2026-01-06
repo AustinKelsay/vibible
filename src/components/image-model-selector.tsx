@@ -107,6 +107,7 @@ export function ImageModelSelector({ variant = "compact" }: ImageModelSelectorPr
         aria-label={`Current image model: ${displayName}. Click to change.`}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
+        title={`Image model: ${displayName}`}
       >
         <ImageIcon size={16} className="opacity-60" />
         <span className="hidden sm:inline">{compactName}</span>

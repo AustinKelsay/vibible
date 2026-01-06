@@ -74,7 +74,7 @@ interface Invoice {
 type ModalState = "welcome" | "selection" | "loading" | "invoice" | "success" | "error";
 
 export function BuyCreditsModal() {
-  const { isBuyModalOpen, closeBuyModal, refetch, credits, tier } = useSession();
+  const { isBuyModalOpen, closeBuyModal, refetch, credits } = useSession();
   const [state, setState] = useState<ModalState>("welcome");
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -326,6 +326,7 @@ export function BuyCreditsModal() {
           onClick={handleClose}
           className="absolute top-4 right-4 p-2 text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
           aria-label="Close"
+          title="Close"
         >
           <X size={20} strokeWidth={2} />
         </button>
@@ -589,6 +590,7 @@ export function BuyCreditsModal() {
                   onClick={copyBolt11}
                   className="p-2 bg-[var(--surface)] rounded-[var(--radius-sm)] hover:bg-[var(--divider)] transition-colors"
                   aria-label="Copy invoice"
+                  title={copied ? "Copied!" : "Copy"}
                 >
                   {copied ? (
                     <Check size={18} className="text-[var(--success)]" />

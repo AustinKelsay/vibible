@@ -162,6 +162,19 @@ export default defineSchema({
         verseRange: v.optional(v.string()),
       })
     ),
+    imageContext: v.optional(
+      v.object({
+        imageId: v.optional(v.string()), // Convex image ID
+        model: v.optional(v.string()), // AI model used (e.g., "google/gemini-2.5-flash-image")
+        provider: v.optional(v.string()), // Provider name (e.g., "Google")
+        aspectRatio: v.optional(v.string()), // e.g., "16:9"
+        dimensions: v.optional(v.string()), // e.g., "1248 × 832"
+        creditsCost: v.optional(v.number()), // Credits charged for generation
+        costUsd: v.optional(v.number()), // USD cost
+        durationMs: v.optional(v.number()), // Generation time in ms
+        createdAt: v.optional(v.number()), // Image creation timestamp
+      })
+    ),
     userAgent: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_createdAt", ["createdAt"]),

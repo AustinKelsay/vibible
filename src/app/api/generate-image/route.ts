@@ -3,8 +3,17 @@ import {
   DEFAULT_IMAGE_MODEL,
   fetchImageModels,
   computeCreditsCost,
+  computeAdjustedCreditsCost,
   getProviderName,
   CREDIT_USD,
+  DEFAULT_ASPECT_RATIO,
+  DEFAULT_RESOLUTION,
+  RESOLUTIONS,
+  isValidAspectRatio,
+  isValidResolution,
+  supportsResolution,
+  ImageAspectRatio,
+  ImageResolution,
 } from "@/lib/image-models";
 import {
   DEFAULT_CHAT_MODEL,
@@ -219,7 +228,18 @@ export async function GET(request: Request) {
   const requestedModelId = searchParams.get("model");
   const generationParam = searchParams.get("generation");
   const requestedStyleId = searchParams.get("style");
-  const aspectRatio = "16:9";
+  const requestedAspectRatio = searchParams.get("aspectRatio");
+  const requestedResolution = searchParams.get("resolution");
+
+  // Validate and set aspect ratio (default: 16:9)
+  const aspectRatio: ImageAspectRatio = requestedAspectRatio && isValidAspectRatio(requestedAspectRatio)
+    ? requestedAspectRatio
+    : DEFAULT_ASPECT_RATIO;
+
+  // Validate and set resolution (default: 1K)
+  const resolution: ImageResolution = requestedResolution && isValidResolution(requestedResolution)
+    ? requestedResolution
+    : DEFAULT_RESOLUTION;
 
   let modelId = DEFAULT_IMAGE_MODEL;
   let modelPricing: string | undefined;
@@ -329,8 +349,8 @@ export async function GET(request: Request) {
   }
 
   // SECURITY: Reject models without valid pricing (prevents cost abuse)
-  const imageCreditsCost = computeCreditsCost(modelPricing);
-  if (imageCreditsCost === null) {
+  const baseImageCreditsCost = computeCreditsCost(modelPricing);
+  if (baseImageCreditsCost === null) {
     return NextResponse.json(
       {
         error: "Model pricing unavailable",
@@ -339,6 +359,14 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
+
+  // Check if this model supports resolution settings
+  // Only certain models (currently Gemini) support configurable resolution
+  const modelSupportsResolution = supportsResolution(modelId);
+
+  // Apply resolution multiplier only if model supports it
+  // This prevents charging users extra for resolution settings that are ignored
+  const imageCreditsCost = computeAdjustedCreditsCost(baseImageCreditsCost, resolution, modelId);
 
   // Determine scene planner settings early for cost calculation
   const enableScenePlanner = process.env.ENABLE_SCENE_PLANNER !== "false";
@@ -456,7 +484,9 @@ export async function GET(request: Request) {
   }
 
   // Build prompt with storyboard context for visual continuity
-  const aspectRatioInstruction = `Generate the image in WIDESCREEN LANDSCAPE format with a ${aspectRatio} aspect ratio (wide, not square).`;
+  const aspectRatioLabel = aspectRatio === "21:9" ? "ULTRA-WIDE CINEMATIC" :
+    aspectRatio === "3:2" ? "CLASSIC WIDE" : "WIDESCREEN";
+  const aspectRatioInstruction = `Generate the image in ${aspectRatioLabel} LANDSCAPE format with a ${aspectRatio} aspect ratio (wide, not square).`;
 
   /**
    * Get ordinal suffix for a number (1st, 2nd, 3rd, 4th, etc.)
@@ -708,15 +738,16 @@ ${aspectRatioInstruction}`;
         ],
         // Request image output
         modalities: ["image", "text"],
-        // Specify 16:9 widescreen aspect ratio
+        // Specify aspect ratio and conditionally include resolution
+        // image_size is only supported by certain models (currently Gemini)
         image_config: {
           aspect_ratio: aspectRatio,
+          ...(modelSupportsResolution && { image_size: resolution }),
         },
       }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
       // SECURITY: Log minimal error info to avoid exposing API internals
       console.error(`[Image API] OpenRouter error: status=${response.status}`);
       throw new Error(`OpenRouter API error: ${response.status}`);
@@ -808,6 +839,10 @@ ${aspectRatioInstruction}`;
           scenePlannerUsed,
           durationMs: generationDurationMs,
           aspectRatio,
+          resolution,
+          // Only show actual multiplier if model supports resolution
+          resolutionMultiplier: modelSupportsResolution ? RESOLUTIONS[resolution].multiplier : 1.0,
+          resolutionSupported: modelSupportsResolution,
           ...(updatedCredits !== undefined && { credits: updatedCredits }),
         },
         {
