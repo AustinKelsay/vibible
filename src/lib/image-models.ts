@@ -47,8 +47,8 @@ export type ImageResolution = "1K" | "2K" | "4K";
 
 export const RESOLUTIONS: Record<ImageResolution, { label: string; multiplier: number }> = {
   "1K": { label: "1K Standard", multiplier: 1.0 },
-  "2K": { label: "2K High", multiplier: 2.0 },
-  "4K": { label: "4K Ultra", multiplier: 4.0 },
+  "2K": { label: "2K High", multiplier: 3.5 },
+  "4K": { label: "4K Ultra", multiplier: 6.5 },
 };
 
 export const DEFAULT_RESOLUTION: ImageResolution = "1K";

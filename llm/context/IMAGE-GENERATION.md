@@ -132,8 +132,8 @@ Users can configure aspect ratio and resolution for generated images via dropdow
 | Option | Label | Cost Multiplier | Description |
 |--------|-------|-----------------|-------------|
 | `1K` | Standard | 1.0x | Base resolution (default) |
-| `2K` | High | 2.0x | Higher resolution |
-| `4K` | Ultra | 4.0x | Maximum resolution |
+| `2K` | High | 3.5x | Higher resolution |
+| `4K` | Ultra | 6.5x | Maximum resolution |
 
 **Important:** Resolution settings are only supported by certain models (currently Gemini). For non-supporting models:
 - The resolution selector appears dimmed

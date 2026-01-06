@@ -48,8 +48,8 @@ export const DEFAULT_ASPECT_RATIO: ImageAspectRatio = "16:9";
 export const DEFAULT_RESOLUTION: ImageResolution = "1K";
 export const RESOLUTIONS: Record<ImageResolution, { label: string; multiplier: number }> = {
   "1K": { label: "Standard", multiplier: 1.0 },
-  "2K": { label: "High", multiplier: 2.0 },
-  "4K": { label: "Ultra", multiplier: 4.0 },
+  "2K": { label: "High", multiplier: 3.5 },
+  "4K": { label: "Ultra", multiplier: 6.5 },
 };
 
 export function isValidAspectRatio(value: unknown): value is ImageAspectRatio {
@@ -100,8 +100,8 @@ Users can configure aspect ratio and resolution for generated images.
 | Resolution | Label | Multiplier | Example (20 base credits) |
 |------------|-------|------------|---------------------------|
 | `1K` | Standard | 1.0x | 20 credits |
-| `2K` | High | 2.0x | 40 credits |
-| `4K` | Ultra | 4.0x | 80 credits |
+| `2K` | High | 3.5x | 70 credits |
+| `4K` | Ultra | 6.5x | 130 credits |
 
 ### Model-Specific Resolution Support
 

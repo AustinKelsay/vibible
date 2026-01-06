@@ -53,6 +53,52 @@ CONVEX_SERVER_SECRET=your-secure-random-secret
 7. Stores the invoice in Convex via `api.invoices.createInvoice` (passes pre-generated `invoiceId`).
 8. Returns `invoiceId`, `bolt11`, `amounts`, `expiresAt`, and `credits` (300).
 
+### Security Considerations: IP-Only Rate Limiting
+
+**Design Decision:** Invoice creation uses **IP-only rate limiting** (`ipHash` identifier) instead of the IP+session pattern (`${ipHash}:${sid}`) used by other endpoints like chat and image generation.
+
+**Rationale:** This is an **intentional design choice** that prioritizes network-level DDoS protection over per-session quotas. The invoice creation flow involves multiple external dependencies and resource-intensive operations that must be protected:
+
+1. **`getBtcPrice()`** - External Coinbase API call with 5-second timeout
+2. **`usdToSats()`** - Price conversion calculation
+3. **`createLndInvoice()`** - External LND node API call (10-second timeout, creates persistent invoice)
+4. **`base64ToHex()`** - Payment hash encoding
+5. **`api.invoices.createInvoice()`** - Convex database write with session lookup
+
+**Attack Surface:** Without IP-only limiting, an attacker could:
+- Create multiple sessions from the same IP to bypass rate limits
+- Flood the LND node with invoice creation requests (most expensive operation)
+- Exhaust Coinbase API quota and trigger rate limiting on price fetches
+- Fill the Convex `invoices` table with spam records
+- Overwhelm LND's invoice database and memory
+
+**Trade-offs:**
+
+✅ **Benefits:**
+- **Stronger DDoS defense**: Prevents invoice flooding attacks that could overwhelm the LND node
+- **LND protection**: The 10 invoices/minute limit applies per IP regardless of session count
+- **External API protection**: Prevents exhausting Coinbase API quota via multi-session bypass
+- **Resource conservation**: Limits expensive external calls at the network level
+
+⚠️ **Limitations:**
+- **Shared quota for legitimate users**: All sessions behind the same IP share the 10/minute quota
+- **Impact on corporate networks**: Users behind corporate NAT may hit limits more quickly
+- **Public Wi-Fi limitations**: Multiple legitimate users on public Wi-Fi share the same quota
+- **VPN/proxy users**: Users on shared VPN endpoints may experience reduced availability
+
+**Justification:** The trade-off is acceptable because:
+- Invoice creation is infrequent (typically 1-2 per session for credit purchases)
+- 10 invoices/minute per IP is sufficient for legitimate usage patterns
+- Protecting LND from flooding is critical (node availability affects all users)
+- The 15-minute invoice expiry provides natural cleanup of unused invoices
+- Payment confirmation still requires session ownership (`invoice.sid` check)
+
+**Comparison with Other Endpoints:**
+- `chat`: Uses `${ipHash}:${sid}` (per-session quota appropriate for frequent, low-cost operations)
+- `generate-image`: Uses `${ipHash}:${sid}` (per-session quota for expensive AI operations)
+- `invoice`: Uses `ipHash` only (network-level protection for external dependencies)
+- `session`: Uses `ipHash` only (prevents session creation spam)
+
 **Stored fields:** `invoiceId`, `sid`, `amountUsd`, `amountSats`, `bolt11`, `paymentHash`, `status`, `createdAt`, `expiresAt`, `paidAt`.
 
 **LND ↔ Convex Linking:** The `invoiceId` in the LND memo allows looking up any invoice in Convex directly from the LND node interface. The `paymentHash` (hex-encoded `r_hash`) also links both systems but is less human-readable.
