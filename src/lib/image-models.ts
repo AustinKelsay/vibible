@@ -15,6 +15,11 @@ export const PREMIUM_MULTIPLIER = 1.25; // 25% premium over OpenRouter price
 export const DEFAULT_ETA_SECONDS = 12; // default for unknown models
 export const DEFAULT_CREDITS_COST = 20; // default credit cost for unpriced models (~$0.20)
 
+// Conservative estimate multiplier to account for OpenRouter API vs actual billing discrepancy.
+// The models API `pricing.image` field significantly underreports costs for multimodal models
+// like Gemini (~31x actual cost observed). We use 35x to ensure reservations cover actual cost.
+export const CONSERVATIVE_ESTIMATE_MULTIPLIER = 35;
+
 /**
  * Compute the credit cost for a model based on OpenRouter pricing.
  * Returns null if pricing is missing or invalid (unpriced model).
@@ -27,6 +32,43 @@ export function computeCreditsCost(pricingImage: string | undefined): number | n
 
   const effectiveUsd = baseUsd * PREMIUM_MULTIPLIER;
   return Math.max(1, Math.ceil(effectiveUsd / CREDIT_USD));
+}
+
+/**
+ * Compute a conservative credit estimate for reservation purposes.
+ * This accounts for the known discrepancy between OpenRouter's API pricing
+ * and actual billing for multimodal image models.
+ *
+ * @param pricingImage - The pricing.image value from OpenRouter models API
+ * @returns Conservative credit estimate for upfront reservation, or null if unpriced
+ */
+export function computeConservativeEstimate(pricingImage: string | undefined): number | null {
+  const baseCost = computeCreditsCost(pricingImage);
+  if (baseCost === null) return null;
+  return Math.ceil(baseCost * CONSERVATIVE_ESTIMATE_MULTIPLIER);
+}
+
+/**
+ * Compute credits from actual OpenRouter usage cost.
+ * Used post-generation to calculate the real charge based on actual API cost.
+ *
+ * @param actualUsageUsd - The actual USD cost from OpenRouter response
+ * @param fallbackCredits - Credits to use if actual usage is unavailable
+ * @returns Object with credits to charge and whether actual usage was used
+ */
+export function computeCreditsFromActualUsage(
+  actualUsageUsd: number | null,
+  fallbackCredits: number
+): { credits: number; usedActual: boolean } {
+  if (actualUsageUsd !== null && actualUsageUsd > 0) {
+    const withPremium = actualUsageUsd * PREMIUM_MULTIPLIER;
+    return {
+      credits: Math.max(1, Math.ceil(withPremium / CREDIT_USD)),
+      usedActual: true,
+    };
+  }
+  // Fallback: use provided estimate (ensures we don't undercharge)
+  return { credits: fallbackCredits, usedActual: false };
 }
 
 export const DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image";
@@ -201,7 +243,9 @@ export async function fetchImageModels(openRouterApiKey: string): Promise<ImageM
         pricing: {
           imageOutput: model.pricing?.image,
         },
-        creditsCost: computeCreditsCost(model.pricing?.image),
+        // Use conservative estimate for UI display (accounts for API pricing discrepancy)
+        // Actual charge will be based on real OpenRouter usage after generation
+        creditsCost: computeConservativeEstimate(model.pricing?.image),
         etaSeconds: DEFAULT_ETA_SECONDS, // Will be overridden by modelStats
       }))
       .sort((a: ImageModel, b: ImageModel) => {

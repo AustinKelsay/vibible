@@ -186,8 +186,24 @@ On success, returns `{ success, alreadyPaid?, newBalance?, creditsAdded? }`.
 
 - `createLndInvoice(amountSats, memo)` uses the invoice macaroon.
   - `memo` contains the Convex `invoiceId` for cross-system linking.
+  - Returns `r_hash` in base64 encoding (LND's default response format).
 - `lookupLndInvoice(paymentHash)` checks settlement state.
+  - Expects `paymentHash` in **hex encoding** (as stored in Convex).
+  - First tries hex directly in path `/v1/invoice/{hex}`, then falls back to base64 query param `/v1/invoice?r_hash={base64}`.
 - Uses 10-second timeouts for LND requests to avoid blocking.
+
+### Payment Hash Encoding
+
+**Important:** LND uses different encodings in different contexts:
+
+| Context | Encoding | Example |
+|---------|----------|---------|
+| LND REST response (`r_hash`) | Base64 | `Wm9vYmFy...` |
+| Convex storage (`paymentHash`) | Hex | `5a6f6f626172...` |
+| LND REST lookup (primary) | Hex | `/v1/invoice/5a6f6f626172...` |
+| LND REST lookup (fallback) | Base64 | `/v1/invoice?r_hash=Wm9vYmFy...` |
+
+The conversion happens at invoice creation time (`base64ToHex(lndInvoice.r_hash)`) and the hex format is used for storage. Lookups first try hex in the path, then fall back to base64 in a query param for compatibility with different LND gateway implementations.
 
 ---
 

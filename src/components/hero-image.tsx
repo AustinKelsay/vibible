@@ -258,7 +258,7 @@ function ResolutionSelector({
                 <span>{RESOLUTIONS[res].label}</span>
                 {showCost && (
                   <span className="text-xs text-[var(--muted)]">
-                    {cost} credits
+                    Up to {cost} credits
                   </span>
                 )}
               </button>
@@ -1311,9 +1311,9 @@ function HeroImageBase({
                       <span className="text-sm inline-flex items-center gap-2">
                         Generate
                         {showCreditsCost && (
-                          <span className="inline-flex items-center gap-1 text-[var(--muted)]">
+                          <span className="inline-flex items-center gap-1 text-[var(--muted)]" title="Unused credits refunded after generation">
                             <Zap size={12} strokeWidth={2} />
-                            <span>{effectiveCost}</span>
+                            <span>≤{effectiveCost}</span>
                           </span>
                         )}
                         <span className="inline-flex items-center gap-1 text-[var(--muted)]">

@@ -8,7 +8,6 @@ import { api } from "../../../../convex/_generated/api";
 
 // Fixed bundle price
 const BUNDLE_USD = 3;
-const BUNDLE_CREDITS = 300;
 
 /**
  * POST /api/invoice

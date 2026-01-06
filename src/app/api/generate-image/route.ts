@@ -4,8 +4,11 @@ import {
   fetchImageModels,
   computeCreditsCost,
   computeAdjustedCreditsCost,
+  computeConservativeEstimate,
+  computeCreditsFromActualUsage,
   getProviderName,
   CREDIT_USD,
+  PREMIUM_MULTIPLIER,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_RESOLUTION,
   RESOLUTIONS,
@@ -157,6 +160,18 @@ export async function GET(request: Request) {
   // SECURITY: Convex is required for credit management and rate limiting
   const convex = getConvexClient();
   if (!convex) {
+    return NextResponse.json(
+      { error: "Service temporarily unavailable" },
+      { status: 503 }
+    );
+  }
+
+  // Verify server secret is configured (fail fast with clear error vs cryptic 500 later)
+  let serverSecret: string;
+  try {
+    serverSecret = getConvexServerSecret();
+  } catch {
+    console.error("[Image API] CONVEX_SERVER_SECRET not configured");
     return NextResponse.json(
       { error: "Service temporarily unavailable" },
       { status: 503 }
@@ -368,6 +383,11 @@ export async function GET(request: Request) {
   // This prevents charging users extra for resolution settings that are ignored
   const imageCreditsCost = computeAdjustedCreditsCost(baseImageCreditsCost, resolution, modelId);
 
+  // Compute conservative estimate for reservation (accounts for OpenRouter API pricing discrepancy)
+  // The OpenRouter models API often underreports actual costs for multimodal image models
+  const baseReservationCredits = computeConservativeEstimate(modelPricing);
+  const reservationImageCredits = computeAdjustedCreditsCost(baseReservationCredits, resolution, modelId);
+
   // Determine scene planner settings early for cost calculation
   const enableScenePlanner = process.env.ENABLE_SCENE_PLANNER !== "false";
   const scenePlannerModel =
@@ -391,14 +411,18 @@ export async function GET(request: Request) {
     }
   }
 
-  // Total cost = image + scene planner
-  const totalCreditsCost = imageCreditsCost + scenePlannerCreditsCost;
-  const imageCostUsd = imageCreditsCost * CREDIT_USD;
-  const totalCostUsd = imageCostUsd + scenePlannerCostUsd;
+  // Estimated cost (what we expect to charge based on API pricing)
+  const estimatedCreditsCost = imageCreditsCost + scenePlannerCreditsCost;
+  const estimatedImageCostUsd = imageCreditsCost * CREDIT_USD;
+  const estimatedTotalCostUsd = estimatedImageCostUsd + scenePlannerCostUsd;
 
-  // Atomic credit reservation before generation (prevents race conditions)
-  const cost = totalCreditsCost;
-  const costUsd = totalCostUsd;
+  // Reservation cost (conservative estimate to ensure we have enough)
+  const reservationCreditsCost = reservationImageCredits + scenePlannerCreditsCost;
+  const reservationCostUsd = reservationCreditsCost * CREDIT_USD;
+
+  // Use reservation amount for atomic credit reservation (higher than expected to cover actual cost)
+  const cost = reservationCreditsCost;
+  const costUsd = reservationCostUsd;
   let updatedCredits: number | undefined;
   let shouldCharge = false;
   let reservationMade = false;
@@ -423,10 +447,22 @@ export async function GET(request: Request) {
       modelId,
       generationId: chargeGenerationId,
       costUsd,
-      serverSecret: getConvexServerSecret(),
+      serverSecret,
     });
 
     if (!reserveResult.success) {
+      // Check if failure is due to daily spending limit vs insufficient credits
+      if ("dailyLimit" in reserveResult) {
+        return NextResponse.json(
+          {
+            error: "Daily spending limit exceeded",
+            dailyLimit: reserveResult.dailyLimit,
+            dailySpent: reserveResult.dailySpent,
+            remaining: reserveResult.remaining,
+          },
+          { status: 429 } // Too Many Requests - appropriate for rate/limit exceeded
+        );
+      }
       return NextResponse.json(
         {
           error: "Insufficient credits",
@@ -455,7 +491,7 @@ export async function GET(request: Request) {
         modelId,
         estimatedCredits: cost,
         estimatedCostUsd: costUsd,
-        serverSecret: getConvexServerSecret(),
+        serverSecret,
       });
     } catch (err) {
       console.error("[Image API] Failed to log admin usage:", err);
@@ -629,7 +665,7 @@ Style profile: ${styleProfile.label} (${styleProfile.rendering})`;
           sid,
           amount: scenePlannerCreditsCost,
           reason: "scene_planner_refund",
-          serverSecret: getConvexServerSecret(),
+          serverSecret,
         });
         refundSuccess = true;
       } catch (refundError) {
@@ -757,21 +793,83 @@ ${aspectRatioInstruction}`;
     const message = data.choices?.[0]?.message;
     const providerRequestId = typeof data?.id === "string" ? data.id : undefined;
 
+    // Extract actual usage/cost from OpenRouter response
+    // OpenRouter may return cost in various locations depending on API version and request type
+    // Check multiple known locations in priority order
+    const openRouterUsageUsd: number | null = (() => {
+      // Priority 1: Direct cost field in usage object (most common for OpenRouter)
+      if (typeof data.usage?.cost === "number" && data.usage.cost > 0) {
+        return data.usage.cost;
+      }
+      // Priority 2: total_cost field (alternative naming)
+      if (typeof data.usage?.total_cost === "number" && data.usage.total_cost > 0) {
+        return data.usage.total_cost;
+      }
+      // Priority 3: Root-level cost field
+      if (typeof data.cost === "number" && data.cost > 0) {
+        return data.cost;
+      }
+      // Priority 4: Root-level total_cost field
+      if (typeof data.total_cost === "number" && data.total_cost > 0) {
+        return data.total_cost;
+      }
+      return null;
+    })();
+
+    // Log when actual cost isn't available - include usage structure for debugging
+    if (openRouterUsageUsd === null) {
+      // Log the actual usage object structure to help identify correct field location
+      const usageDebug = data.usage !== undefined
+        ? `usage=${JSON.stringify(data.usage)}`
+        : "usage=undefined";
+      console.warn(`[Image API] No cost in response for model=${modelId}, gen=${chargeGenerationId}, ${usageDebug}`);
+    }
+
+    // Calculate actual credits to charge based on OpenRouter usage
+    // Fall back to API-based estimate (not conservative 35x) if actual usage not available
+    const effectiveScenePlannerCredits = scenePlannerUsed ? scenePlannerCreditsCost : 0;
+    const effectiveScenePlannerCostUsd = scenePlannerUsed ? scenePlannerCostUsd : 0;
+
+    // Compute actual image credits from OpenRouter usage
+    // Use API-based estimate as fallback (imageCreditsCost) rather than conservative 35x (reservationImageCredits)
+    const { credits: actualImageCredits, usedActual } = computeCreditsFromActualUsage(
+      openRouterUsageUsd,
+      imageCreditsCost // Fall back to API-based estimate, not conservative 35x
+    );
+    const usedFallbackEstimate = !usedActual;
+
+    // Log when fallback is used for retroactive analysis
+    if (usedFallbackEstimate) {
+      console.warn(`[Image API] Using fallback estimate for model=${modelId}, gen=${chargeGenerationId}, fallbackCredits=${imageCreditsCost}, reservationCredits=${reservationImageCredits}`);
+    }
+
+    // Total actual credits and cost
+    const actualTotalCredits = actualImageCredits + effectiveScenePlannerCredits;
+    const actualImageCostUsd = usedActual && openRouterUsageUsd !== null
+      ? openRouterUsageUsd * PREMIUM_MULTIPLIER
+      : actualImageCredits * CREDIT_USD;
+    const actualTotalCostUsd = actualImageCostUsd + effectiveScenePlannerCostUsd;
+
     // Record generation duration for ETA estimation
     const generationDurationMs = Date.now() - generationStartTime;
+
+    // Track if there was a charge shortfall (rare: actual exceeded 35x conservative estimate)
+    let chargeShortfall: { wantedCredits: number; chargedCredits: number; shortfall: number } | null = null;
 
     // Helper to record stats and return success
     const recordStatsAndReturn = async (imageUrl: string) => {
       if (shouldCharge) {
         // Convert reservation to debit after successful generation
-        // This is idempotent - if reservation was already converted, it returns success
+        // Pass actual amount to charge based on OpenRouter usage
         const deductResult = await convex.action(api.sessions.deductCredits, {
           sid,
-          amount: cost,
+          amount: cost, // Original reserved amount
           modelId,
           generationId: chargeGenerationId,
-          costUsd,
-          serverSecret: getConvexServerSecret(),
+          costUsd, // Original estimated cost
+          actualAmount: actualTotalCredits, // Actual credits to charge
+          actualCostUsd: actualTotalCostUsd, // Actual USD cost
+          serverSecret,
         });
 
         if (!deductResult.success) {
@@ -782,14 +880,14 @@ ${aspectRatioInstruction}`;
               .action(api.sessions.releaseReservation, {
                 sid,
                 generationId: chargeGenerationId,
-                serverSecret: getConvexServerSecret(),
+                serverSecret,
               })
               .catch(() => {}); // Ignore release errors
           }
           return NextResponse.json(
             {
               error: "Insufficient credits",
-              required: cost,
+              required: actualTotalCredits,
               available:
                 "available" in deductResult ? deductResult.available : 0,
             },
@@ -800,6 +898,25 @@ ${aspectRatioInstruction}`;
         if ("newBalance" in deductResult) {
           updatedCredits = deductResult.newBalance;
         }
+
+        // Handle shortfall case: actual cost exceeded reservation and user couldn't cover the difference
+        // In this case, we only charged the reserved amount, not the full actual amount
+        if ("shortfall" in deductResult && deductResult.shortfall) {
+          console.warn(
+            `[Image API] Shortfall: wanted=${actualTotalCredits} credits, charged=${cost} credits, shortfall=${deductResult.shortfall}, gen=${chargeGenerationId}`
+          );
+          // Mark that we had a shortfall - response will use reserved amounts instead of actual
+          chargeShortfall = {
+            wantedCredits: actualTotalCredits,
+            chargedCredits: cost,
+            shortfall: deductResult.shortfall as number,
+          };
+        }
+
+        // Log cost comparison for monitoring
+        if (usedActual) {
+          console.log(`[Image API] Cost comparison: estimated=${estimatedCreditsCost} credits, actual=${actualTotalCredits} credits, openRouterUsd=${openRouterUsageUsd}`);
+        }
       }
 
       // Record generation stats for ETA estimation (don't await - fire and forget)
@@ -809,11 +926,16 @@ ${aspectRatioInstruction}`;
           durationMs: generationDurationMs,
         })
         .catch(() => {});
-      // Calculate effective costs based on whether scene planner was used
-      const effectiveScenePlannerCredits = scenePlannerUsed ? scenePlannerCreditsCost : 0;
-      const effectiveScenePlannerCostUsd = scenePlannerUsed ? scenePlannerCostUsd : 0;
-      const effectiveTotalCredits = imageCreditsCost + effectiveScenePlannerCredits;
-      const effectiveTotalCostUsd = imageCostUsd + effectiveScenePlannerCostUsd;
+
+      // Calculate final charged amounts (may differ from actual in rare shortfall case)
+      const finalChargedCredits = chargeShortfall?.chargedCredits ?? actualTotalCredits;
+      const finalChargedImageCredits = chargeShortfall
+        ? Math.max(0, chargeShortfall.chargedCredits - effectiveScenePlannerCredits)
+        : actualImageCredits;
+      const finalChargedCostUsd = chargeShortfall ? costUsd : actualTotalCostUsd;
+      const finalChargedImageCostUsd = chargeShortfall
+        ? Math.max(0, costUsd - effectiveScenePlannerCostUsd)
+        : actualImageCostUsd;
 
       return NextResponse.json(
         {
@@ -829,14 +951,22 @@ ${aspectRatioInstruction}`;
           verseText,
           chapterTheme: chapterTheme ?? undefined,
           generationNumber: generationNumber ?? undefined,
-          // Cost breakdown
-          creditsCost: effectiveTotalCredits, // Total credits charged (for backward compatibility)
-          imageCreditsCost,
+          // Cost breakdown - actual charged amounts (adjusted for shortfall if applicable)
+          creditsCost: finalChargedCredits, // Total credits charged
+          imageCreditsCost: finalChargedImageCredits,
           scenePlannerCredits: effectiveScenePlannerCredits,
-          costUsd: effectiveTotalCostUsd, // Total USD (for backward compatibility)
-          imageCostUsd,
+          costUsd: finalChargedCostUsd, // Total USD cost
+          imageCostUsd: finalChargedImageCostUsd,
           scenePlannerCostUsd: effectiveScenePlannerCostUsd,
           scenePlannerUsed,
+          // Estimation vs actual tracking
+          estimatedCreditsCost,
+          estimatedCostUsd: estimatedTotalCostUsd,
+          openRouterUsageUsd,
+          usedActualCost: usedActual,
+          usedFallbackEstimate, // true when OpenRouter didn't return usage data
+          // Shortfall tracking (rare: actual exceeded 35x conservative estimate)
+          ...(chargeShortfall && { chargeShortfall }),
           durationMs: generationDurationMs,
           aspectRatio,
           resolution,
@@ -884,7 +1014,7 @@ ${aspectRatioInstruction}`;
         .action(api.sessions.releaseReservation, {
           sid,
           generationId: chargeGenerationId,
-          serverSecret: getConvexServerSecret(),
+          serverSecret,
         })
         .catch((releaseError) => {
           console.error("Failed to release reservation:", releaseError);
@@ -902,7 +1032,7 @@ ${aspectRatioInstruction}`;
         .action(api.sessions.releaseReservation, {
           sid,
           generationId: chargeGenerationId,
-          serverSecret: getConvexServerSecret(),
+          serverSecret,
         })
         .catch((releaseError) => {
           console.error("Failed to release reservation:", releaseError);

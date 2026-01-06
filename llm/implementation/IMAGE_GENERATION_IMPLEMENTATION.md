@@ -123,6 +123,14 @@ export function supportsResolution(modelId: string): boolean {
 
 ### Credit Cost Calculation
 
+**Important:** OpenRouter's models API `pricing.image` field often significantly underreports actual costs for multimodal models like Gemini. The actual billing is based on image completion tokens at a much higher rate (observed ~31x difference).
+
+**Conservative reservation:** Credits are reserved using `computeConservativeEstimate()` which applies a 35x multiplier to account for this discrepancy.
+
+**Actual-usage charging:** After generation, the actual cost is extracted from OpenRouter's response and used for the final charge. The extraction checks multiple possible field locations in priority order: `usage.cost`, `usage.total_cost`, `data.cost`, `data.total_cost`. Excess reserved credits are automatically refunded.
+
+**Fallback when usage unavailable:** If OpenRouter doesn't return cost data in any known location, the API-based estimate (`imageCreditsCost`) is used instead of the conservative 35x estimate. This prevents overcharging when cost extraction fails. The response includes `usedFallbackEstimate: true` to flag these cases. When fallback is used, the actual `usage` object structure is logged for debugging to help identify new cost field locations.
+
 ```typescript
 export function computeAdjustedCreditsCost(
   baseCost: number,
@@ -464,14 +472,20 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
   verseText,
   chapterTheme?,
   generationNumber?,
-  // Cost breakdown
-  creditsCost,           // Total credits charged (image + scene planner if used)
-  imageCreditsCost,      // Image model cost
+  // Cost breakdown - actual charged amounts
+  creditsCost,           // Total credits charged (actual, based on usage)
+  imageCreditsCost,      // Image model cost (actual)
   scenePlannerCredits,   // Scene planner cost (0 if free model or not used)
-  costUsd,               // Total USD
-  imageCostUsd,          // Image USD
+  costUsd,               // Total USD (actual)
+  imageCostUsd,          // Image USD (actual)
   scenePlannerCostUsd,   // Scene planner USD
   scenePlannerUsed,      // Boolean: whether scene planner succeeded
+  // Estimate vs actual tracking
+  estimatedCreditsCost,  // Pre-generation estimate (what API pricing suggested)
+  estimatedCostUsd,      // Pre-generation estimate in USD
+  openRouterUsageUsd,    // Actual OpenRouter cost (null if not captured)
+  usedActualCost,        // Boolean: whether actual usage was captured
+  usedFallbackEstimate,  // Boolean: true when OpenRouter didn't return usage (used API estimate)
   durationMs,
   // Image settings
   aspectRatio,           // User-selected aspect ratio (e.g., "16:9")
@@ -515,7 +529,7 @@ Convex persistence is documented in detail in:
 - **401** - Missing or invalid session.
 - **402** - Insufficient credits (returns `required`/`available` amounts).
 - **403** - Image generation disabled (`ENABLE_IMAGE_GENERATION=false`) or origin validation failed.
-- **429** - Rate limit exceeded (returns `retryAfter` seconds).
+- **429** - Rate limit exceeded (returns `retryAfter` seconds) or daily spending limit exceeded (returns `dailyLimit`/`dailySpent`/`remaining`).
 - **500** - Missing `OPENROUTER_API_KEY`, OpenRouter API errors, or model doesn't support image output.
 - **503** - Convex unavailable (service temporarily unavailable).
 

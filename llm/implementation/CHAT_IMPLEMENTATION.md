@@ -380,6 +380,7 @@ The API returns user-friendly errors for common failure modes:
 | 401 | No session cookie | Session required |
 | 402 | Insufficient credits | Required vs available amounts |
 | 429 | Rate limit exceeded | Retry-after guidance |
+| 429 | Daily spending limit exceeded | dailyLimit/dailySpent/remaining |
 | 429 | OpenRouter rate limit | High demand message |
 | 500 | Generic error | Retry suggestion |
 | 503 | Convex unavailable | Service temporarily unavailable |

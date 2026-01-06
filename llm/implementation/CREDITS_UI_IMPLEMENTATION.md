@@ -119,6 +119,29 @@ Onboarding is integrated into `BuyCreditsModal` as a "welcome" state, not a sepa
 - Auto-generation only runs when `canGenerate` is true and the session has loaded.
 - On generation success, the server returns `credits` and the UI updates local state.
 
+### Estimate vs Actual Cost Display
+
+The UI shows a **conservative estimate** ("Up to X credits") before generation because:
+
+1. **OpenRouter API pricing is inaccurate** - The models API `pricing.image` field often underreports actual costs by ~31x for multimodal models.
+2. **Reservation system** - Credits are reserved using a 35x multiplier to ensure sufficient funds.
+3. **Automatic refund** - After generation, the actual cost (from OpenRouter's `usage` response) is charged, and excess reserved credits are refunded.
+
+**UI copy pattern:**
+- Model selector: `~12s · Up to {credits} credits`
+- Resolution selector: `Up to {cost} credits`
+- Generate button area: Shows cost with "unused refunded" note
+
+This prevents confusing "insufficient credits" errors when users have enough for the actual charge but not the reservation buffer.
+
+### Fallback Behavior
+
+If OpenRouter doesn't return usage data in its response (monitored via `usedFallbackEstimate: true`):
+- The **API-based estimate** (`imageCreditsCost`) is charged, not the conservative 35x reservation
+- This ensures users aren't overcharged when usage extraction fails
+- Server logs warn: `[Image API] Using fallback estimate for model=X, gen=Y...`
+- The response includes `usedFallbackEstimate: true` for monitoring and retroactive analysis
+
 ---
 
 ## Layout Wiring
