@@ -38,7 +38,7 @@ const isImageGenerationEnabled =
 
 // Fallback text if no verse provided
 const DEFAULT_TEXT = "In the beginning God created the heaven and the earth.";
-const PROMPT_VERSION = "2026-01-05-2";
+const PROMPT_VERSION = "2026-01-07";
 const DEFAULT_STYLE_PROFILE = "classical";
 const DEFAULT_SCENE_PLANNER_MODEL = DEFAULT_CHAT_MODEL;
 const SCENE_PLAN_MAX_FIELD_LENGTH = 180;
@@ -286,7 +286,7 @@ export async function GET(request: Request) {
       materials: "Gritty, raw texture; avoid polished digital smoothness.",
       composition: "Cinematic, immersive viewpoint; heroic but grounded.",
       negative:
-        "Avoid photorealism or a photographic look. Avoid childish/cartoonish styling.",
+        "Avoid photorealism or a photographic look. Avoid childish/cartoonish styling. Never render as a painting on a wall, gallery piece, or framed artwork—fill the entire canvas edge-to-edge.",
     },
   };
 
