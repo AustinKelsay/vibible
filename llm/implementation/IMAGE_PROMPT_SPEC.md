@@ -3,7 +3,7 @@
 Complete specification of how image generation prompts are constructed in Visibible.
 
 **Source:** `src/app/api/generate-image/route.ts`
-**Prompt Version:** `2026-01-05-2`
+**Prompt Version:** `2026-01-07`
 
 ---
 
@@ -500,7 +500,7 @@ Materials/Texture: Gritty, raw texture; avoid polished digital smoothness.
 Composition: Cinematic, immersive viewpoint; heroic but grounded.
 
 STYLE NEGATIVES:
-Avoid photorealism or a photographic look. Avoid childish/cartoonish styling.
+Avoid photorealism or a photographic look. Avoid childish/cartoonish styling. Never render as a painting on a wall, gallery piece, or framed artwork—fill the entire canvas edge-to-edge.
 
 GLOBAL NEGATIVES:
 - No modern artifacts or technology (vehicles, screens, guns, electrical lighting, contemporary architecture, modern clothing).
@@ -521,7 +521,7 @@ Every generated image records metadata for reproducibility and debugging.
 A date-based string stamped on every generation:
 
 ```typescript
-const PROMPT_VERSION = "2026-01-05-2";
+const PROMPT_VERSION = "2026-01-07";
 ```
 
 This version is updated whenever the prompt template changes materially, allowing:
