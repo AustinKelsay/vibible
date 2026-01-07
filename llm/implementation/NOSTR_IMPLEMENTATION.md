@@ -31,6 +31,7 @@ If the private key is unset, Nostr publishing is silently skipped.
 | File | Purpose |
 |------|---------|
 | `convex/nostr.ts` | Nostr publishing action (snstr library) |
+| `convex/http.ts` | HTTP endpoint for permanent image URLs |
 | `convex/verseImages.ts` | Schedules publication, records results |
 | `convex/schema.ts` | Nostr metadata fields on `verseImages` |
 
@@ -44,13 +45,15 @@ If the private key is unset, Nostr publishing is silently skipped.
 
 ### Permanent Image URLs
 
-Nostr events are immutable - once published, they cannot be edited. To ensure images remain accessible forever, we use Convex's permanent public storage URL pattern:
+Nostr events are immutable - once published, they cannot be edited. To ensure images remain accessible forever, we serve images via a custom HTTP action endpoint:
 
 ```
-${CONVEX_CLOUD_URL}/api/storage/${storageId}
+${CONVEX_CLOUD_URL}/image/${storageId}
 ```
 
-Example: `https://your-deployment.convex.cloud/api/storage/kg2abc123...`
+Example: `https://your-deployment.convex.cloud/image/kg2abc123...`
+
+The HTTP endpoint (`convex/http.ts`) fetches from Convex storage and returns the blob with appropriate cache headers.
 
 **Why not `ctx.storage.getUrl()`?** That returns temporary signed URLs that expire. Using those would result in broken images in Nostr posts.
 
@@ -73,7 +76,7 @@ Genesis 1:1
 
 "In the beginning, God created the heavens and the earth."
 
-https://<deployment>.convex.cloud/api/storage/<storageId>#.png
+https://<deployment>.convex.cloud/image/<storageId>#.png
 
 View more at https://visibible.com/genesis/1/1
 ```
@@ -176,12 +179,7 @@ Fire-and-forget design ensures Nostr issues never impact image generation.
 
 ## Testing
 
-Generate a test keypair:
-```bash
-node get-nostr-public-key.js
-```
-
-Verify publication by searching for the public key on:
+Verify publication by searching for your public key on:
 - https://nostr.band
 - https://primal.net
 

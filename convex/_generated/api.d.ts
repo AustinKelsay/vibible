@@ -11,6 +11,7 @@
 import type * as cleanup from "../cleanup.js";
 import type * as crons from "../crons.js";
 import type * as feedback from "../feedback.js";
+import type * as http from "../http.js";
 import type * as invoices from "../invoices.js";
 import type * as modelStats from "../modelStats.js";
 import type * as nostr from "../nostr.js";
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   cleanup: typeof cleanup;
   crons: typeof crons;
   feedback: typeof feedback;
+  http: typeof http;
   invoices: typeof invoices;
   modelStats: typeof modelStats;
   nostr: typeof nostr;

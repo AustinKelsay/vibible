@@ -92,14 +92,14 @@ export const publishToNostr = internalAction({
       return;
     }
 
-    // Construct permanent storage URL (doesn't expire like ctx.storage.getUrl())
-    // CONVEX_CLOUD_URL is a built-in Convex system variable - no manual config needed
+    // Build permanent public URL via HTTP action (see convex/http.ts)
+    // CONVEX_CLOUD_URL is auto-provided in Convex Cloud; may be missing in local dev.
     const convexUrl = process.env.CONVEX_CLOUD_URL;
     if (!convexUrl) {
       console.error("[Nostr] CONVEX_CLOUD_URL not available, skipping publication");
       return;
     }
-    const imageUrl = `${convexUrl}/api/storage/${args.storageId}`;
+    const imageUrl = `${convexUrl}/image/${args.storageId}`;
 
     // Dynamic import of snstr (required for "use node" action)
     const { Nostr, createEvent, signEvent, getPublicKey, getEventHash, decodePrivateKey } = await import("snstr");

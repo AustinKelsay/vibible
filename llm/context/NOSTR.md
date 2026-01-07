@@ -34,23 +34,24 @@ Images are published to:
 
 ## Post Format
 
-```
+```text
 Genesis 1:1
 
 "In the beginning, God created the heavens and the earth."
 
-https://<deployment>.convex.cloud/api/storage/<storageId>#.png
+https://<deployment>.convex.cloud/image/<storageId>#.png
 
 View more at https://visibible.com/genesis/1/1
 ```
 
-Uses permanent Convex storage URLs via `CONVEX_CLOUD_URL` (not expiring signed URLs). Includes NIP-92 imeta tag with image URL, mime type, and dimensions when available.
+Uses permanent URLs via HTTP action endpoint (`/image/:storageId`) rather than expiring signed URLs. Includes NIP-92 imeta tag with image URL, mime type, and dimensions when available.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `convex/nostr.ts` | Publishing action using snstr library |
+| `convex/http.ts` | HTTP endpoint for permanent image URLs |
 | `convex/verseImages.ts` | Schedules publication on image save |
 | `convex/schema.ts` | Nostr metadata fields |
 
