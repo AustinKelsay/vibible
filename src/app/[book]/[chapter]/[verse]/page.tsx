@@ -62,7 +62,7 @@ export async function generateMetadata({
       siteName: "Visibible",
     },
     twitter: {
-      card: "summary_large_image",
+      card: "summary",
       title: `${reference} - Visibible`,
       description,
     },
