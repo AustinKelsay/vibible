@@ -13,21 +13,24 @@ const mockState = {
   ledger: [] as Array<{ sid: string; delta: number; reason: string; generationId?: string }>,
 };
 
-// Store original fetch
+// Store original env and fetch BEFORE any modifications
+const originalEnv = { ...process.env };
 const originalFetch = global.fetch;
 
-// Set env vars before imports
-process.env.OPENROUTER_API_KEY = "test-api-key";
-process.env.CONVEX_URL = "https://test.convex.cloud";
-process.env.CONVEX_SERVER_SECRET = "test-server-secret";
-process.env.SESSION_SECRET = "a".repeat(32);
-process.env.IP_HASH_SECRET = "b".repeat(32);
-process.env.ENABLE_IMAGE_GENERATION = "true";
-process.env.ENABLE_SCENE_PLANNER = "true";
-process.env.SCENE_PLANNER_TIMEOUT_MS = "100";
+// Test-specific environment variables
+const testEnv = {
+  OPENROUTER_API_KEY: "test-api-key",
+  CONVEX_URL: "https://test.convex.cloud",
+  CONVEX_SERVER_SECRET: "test-server-secret",
+  SESSION_SECRET: "a".repeat(32),
+  IP_HASH_SECRET: "b".repeat(32),
+  ENABLE_IMAGE_GENERATION: "true",
+  ENABLE_SCENE_PLANNER: "true",
+  SCENE_PLANNER_TIMEOUT_MS: "100",
+};
 
-// Store original env AFTER setting test vars
-const originalEnv = { ...process.env };
+// Apply test env vars for module imports
+Object.assign(process.env, testEnv);
 
 const SCENE_PLANNER_CREDITS = 1;
 
@@ -240,6 +243,8 @@ function getRefundEntries() {
 describe("Scene Planner Refund Logic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore test env vars at start of each test for isolation
+    Object.assign(process.env, testEnv);
     resetMockState([{ ...fixtures.sessions.paidWithCredits, sid: "test-session", credits: 1000 }]);
     fetchCallIndex = 0;
     scenePlannerResponse = null;

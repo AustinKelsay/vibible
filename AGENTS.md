@@ -12,6 +12,10 @@
 - `npm run build` generates a production build.
 - `npm start` serves the production build locally.
 - `npm run lint` runs ESLint with Next.js and TypeScript rules.
+- `npm run typecheck` runs TypeScript type checking without emitting files.
+- `npm test` runs Vitest tests.
+
+**Note:** When verifying your work, run `npm run lint`, `npm run typecheck`, and `npm test` instead of building. This is faster and catches issues without generating a full production build.
 
 ## Coding Style & Naming Conventions
 - TypeScript + React with `strict` mode enabled in `tsconfig.json`.
@@ -21,13 +25,14 @@
 - Prefer the `@/*` path alias for imports from `src` (e.g., `@/components/chat`).
 
 ## Testing Guidelines
-- No automated test runner is configured yet.
-- If you add tests, introduce a script in `package.json` (for example, `npm run test`) and document where tests live (such as `*.test.tsx` beside features).
+- Tests are run with Vitest (`npm test`).
+- Test files use the `*.test.ts` or `*.test.tsx` naming convention and live alongside the code they test or in `__tests__` directories.
+- When verifying changes, run `npm run lint`, `npm run typecheck`, and `npm test` to ensure code quality.
 
 ## Commit & Pull Request Guidelines
 - The Git history currently only includes `Initial commit`, so there is no established commit format.
 - Use short, imperative commit messages (e.g., `Add streaming chat UI`) and keep unrelated changes separate.
-- PRs should include a concise summary, testing notes (`npm run lint` or manual steps), and screenshots/GIFs for UI changes.
+- PRs should include a concise summary, testing notes (`npm run lint`, `npm run typecheck`, `npm test` or manual steps), and screenshots/GIFs for UI changes.
 
 ## Configuration & Secrets
 - Copy `.env.example` to `.env.local` and set `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` for the chat API.

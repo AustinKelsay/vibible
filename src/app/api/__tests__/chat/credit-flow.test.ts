@@ -261,8 +261,8 @@ describe("Chat API Credit Flow", () => {
         }
       }
 
-      // Verify the flow worked (deduction or stream completion)
-      expect(getCallCount("reserveCredits")).toBeGreaterThanOrEqual(1);
+      // Verify full reserve → stream → deduct cycle
+      expect(getCallCount("deductCredits")).toBe(1);
     });
 
     it("admin-bypass-no-charge: admin user logs audit", async () => {

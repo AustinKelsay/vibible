@@ -8,11 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev          # Start development server at localhost:3000
 npm run build        # Production build
 npm run lint         # Run ESLint
+npm run typecheck    # Run TypeScript type checking (no emit)
 npm start            # Start production server
 npm test             # Run Vitest tests
 npm run test:watch   # Run tests in watch mode
 npm run test:coverage # Run tests with coverage
 ```
+
+**Note:** When verifying your work, run `npm run lint`, `npm run typecheck`, and `npm test` instead of building. This is faster and catches issues without generating a full production build.
 
 ## Architecture
 
