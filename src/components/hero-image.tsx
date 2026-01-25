@@ -986,10 +986,15 @@ function HeroImageBase({
       const errorMessage = err instanceof Error ? err.message : "Failed to generate image";
       setError(errorMessage);
       console.error("Image generation error:", err);
-      // Track generation error
+      // Sanitize error type for analytics (avoid leaking sensitive details)
+      const errorType =
+        err instanceof TypeError ? "network_error" :
+        errorMessage.includes("Missing image URL") ? "missing_url" :
+        errorMessage.includes("timed out") ? "timeout" :
+        "generation_failed";
       trackGenerationError({
         imageModel,
-        errorType: errorMessage,
+        errorType,
         tier,
         hasCredits: credits > 0,
       });

@@ -608,7 +608,7 @@ export function VerseAnalytics(props: VerseAnalyticsProps) {
 ## Example Analytics Queries
 
 ### Coverage Analysis
-```
+```text
 count(verse_images_state where imageState="known" and hasImages=true)
   / count(verse_images_state where imageState="known")
 ```
