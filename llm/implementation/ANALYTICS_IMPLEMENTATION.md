@@ -234,7 +234,7 @@ useEffect(() => {
 **Note:** This is an optimistic event and does not wait for a server response.
 
 **Props:**
-- `variant` — Always "sidebar"
+- `variant` — "inline" (default) or "sidebar"
 - `chatModel` — Selected model ID
 - `messageCount` — Number of messages in conversation
 - `hasContext` — Whether verse context was included
