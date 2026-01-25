@@ -20,7 +20,7 @@ export default function ErrorPage({
         <h1 className="text-4xl font-bold text-[var(--foreground)] mb-4">
           Something went wrong
         </h1>
-        <p className="text-[var(--foreground-muted)] mb-8 max-w-md">
+        <p className="text-[var(--muted)] mb-8 max-w-md">
           We encountered an unexpected error. Please try again.
         </p>
         <div className="flex gap-4 justify-center">
