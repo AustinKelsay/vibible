@@ -96,6 +96,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // Track credits_modal_opened event
   useEffect(() => {
+    if (isLoading) return;
     if (isBuyModalOpen && !prevModalOpenRef.current) {
       // Determine which step - check if user has seen welcome
       const hasSeenWelcome = typeof window !== "undefined"
@@ -107,7 +108,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
     }
     prevModalOpenRef.current = isBuyModalOpen;
-  }, [isBuyModalOpen, tier, credits]);
+  }, [isBuyModalOpen, tier, credits, isLoading]);
 
   const refetch = useCallback(async () => {
     setIsLoading(true);

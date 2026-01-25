@@ -34,7 +34,7 @@ Analytics is implemented as:
 ## Dependencies
 
 - `@vercel/analytics` — `track()` helper used in `src/lib/analytics.ts`
-- `@vercel/analytics/react` — `<Analytics />` component mounted in `src/app/layout.tsx`
+- `@vercel/analytics/next` — `<Analytics />` component mounted in `src/app/layout.tsx`
 
 ## Type System
 
@@ -635,7 +635,7 @@ Filter `verse_images_state` with `imageState="known" and hasImages=false` to fin
 1. Go to Vercel Analytics dashboard
 2. Navigate to Custom Events
 3. View event counts and property breakdowns
-4. Note: ~5 minute delay for events to appear
+4. Note: ~5-minute delay for events to appear
 
 ### Local Development
 

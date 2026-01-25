@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 import { ConvexClientProvider } from "@/components/convex-client-provider";
 import { SessionProvider } from "@/context/session-context";
 import { NavigationProvider } from "@/context/navigation-context";
