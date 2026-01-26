@@ -25,7 +25,7 @@ High-level overview of how Visibible generates scripture illustrations. Details 
 6. Server builds a **storyboard-aware prompt** with strict "no text" + framing guardrails and stamps `promptVersion` + `promptInputs`.
 7. Server generates the image via OpenRouter using the **user-selected model**.
 8. On success, credits are charged (post-charge) and the response includes image URL + prompt + metadata (including `generationId`, provider info, and prompt version/inputs).
-9. If Convex is enabled, the image and metadata are saved and appended to history (including translation + file metadata); otherwise it is displayed directly.
+9. The image and metadata are saved to Convex and appended to history (including translation + file metadata).
 10. On failure, no credits are charged.
 
 ## Chapter Themes (Optional)
