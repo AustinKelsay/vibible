@@ -321,6 +321,8 @@ export function BuyCreditsModal() {
 
         const data = await response.json();
         if (data.status === "paid") {
+          // Clear interval immediately to prevent double-tracking during async operations
+          clearInterval(pollInterval);
           setState("success");
           // Track payment completed
           if (invoice) {
@@ -333,7 +335,6 @@ export function BuyCreditsModal() {
           }
           // Refetch session to update credits
           await refetch();
-          clearInterval(pollInterval);
         } else if (data.status === "expired" || data.status === "failed") {
           setError("Invoice expired. Please try again.");
           setState("error");
